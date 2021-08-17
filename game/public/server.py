@@ -1,4 +1,6 @@
-#Use to create local host
+# Use this insead of python -m http.server beacuse it gives the correct file type on javascript files
+# which give errors for some reason otherwise
+
 import http.server
 import socketserver
 

@@ -1,6 +1,8 @@
 // https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking
 // https://raymondgh.github.io/webrtc.html
 
+import { createSourceMapSource } from "../node_modules/typescript/lib/typescript";
+
 interface wsInterface{
   type: "get-id" | "give-id" | "list-games" | "change-vis" | "join-game" | "rtc-signal" | "ping";
   data: RTCSignal | number;
@@ -21,20 +23,166 @@ interface RTCIceSignal{
 type RTCSignal = RTCIceSignal | RTCDataSignal;
 
 
+
+class Peer{
+  peerConnection: RTCPeerConnection;
+  dataChannel?: RTCDataChannel;
+  id: number; // id is the id for the remote
+  localId: number; // local id is the id of this peer
+  ready: boolean = false;
+  wsSender: (message:RTCSignal)=>void
+  constructor(id: number, localId:number, sender:(message: RTCSignal)=>void){
+    this.peerConnection = new RTCPeerConnection();
+    this.id = id;
+    this.localId = localId;
+    this.wsSender = sender;
+
+    // first set callbacks for once data channel is open
+    // once data channel is created this is called
+    this.peerConnection.ondatachannel = event => {
+      this.dataChannel = event.channel;
+      console.log("on data channel called")
+      this.setDatachannelCallbacks()
+    }
+
+    // triggered by setting local description
+    // create and send ice candidate
+    this.peerConnection.onicecandidate = (event) => {
+      // onicecandidates keep coming until an empty event is passed
+      // console.log(`event given to onicecandidate ${JSON.stringify(event)}`)
+      if (event.candidate) {
+        // prepare a message to send to peer 2
+        let message: RTCIceSignal = { src: this.localId,
+          dst: this.id,
+          messageType: 'ice-candidate',
+          candidate: event.candidate
+        };
+        
+        console.log("ice candidate generated and send")
+        this.wsSender(message);
+      } else {
+        // no more candidates to send
+        console.log("All ICE candidates sent!")
+      }
+    }
+  }
+
+  private setDatachannelCallbacks(){
+    console.log(`set data channel callbacks ${this.dataChannel}`)
+    if(this.dataChannel){ // checks if its not null
+      // some data channel handlers for peer 1
+      this.dataChannel.onopen = event => {
+        console.log("All set!");
+        this.ready = true;
+      }
+
+      this.dataChannel.onclose = event => {
+        console.log("P1: Hey, my data channel was closed!");
+      }
+
+      this.dataChannel.onmessage = event => {
+        console.log("P1: I just got this message:");
+        console.log(event.data);
+      }
+    }
+  }
+
+  public sendString(data:string){
+    if(this.ready && this.dataChannel){
+      this.dataChannel!.send(data);
+    }else{
+      console.log("tried to send before ready")
+      console.log(this)
+    }
+  }
+  public sendObject(object: any){
+    this.sendString(JSON.stringify(object))
+  }
+
+  public createDataOffer(){
+    this.dataChannel = this.peerConnection.createDataChannel("myFirstDataChannel")
+    this.peerConnection.createOffer().then((OfferRTCSessionDescription) => {
+      // peer1, the offerer, will set the offer to be its Local Description
+      // setting Local Description triggers the peer1connection.onicecandidate event!!
+      this.peerConnection!.setLocalDescription(OfferRTCSessionDescription);
+    
+      // Prepare a message to send to peer 2
+      let message: RTCDataSignal = {
+        src: this.localId!,
+        dst: this.id,
+        messageType: 'data-offer',
+        sessionDescription: OfferRTCSessionDescription
+      };
+      console.log(OfferRTCSessionDescription)
+    
+      // send OfferRTCSessionDescription to peer2 via signaling server
+      // this.socket.send(JSON.stringify({type:"rtc-signal", signal:message}));
+      this.wsSender(message)
+
+      this.setDatachannelCallbacks()
+    })
+  }
+
+  // handle offer, means someones trying to join us
+  public handleDataOffer(message:RTCDataSignal){
+    this.peerConnection.setRemoteDescription(message.sessionDescription);
+
+    // then create the response
+    this.peerConnection.createAnswer().then((AnswerRTCSessionDescription) => {
+      console.log("created answer")
+      // set the localdescription as the answer
+      // setting Local Description triggers the peer2connection.onicecandidate event!!
+      this.peerConnection.setLocalDescription(AnswerRTCSessionDescription);
+  
+      // Prepare a message to send to peer 2
+      let answer: RTCDataSignal = {	src: message.dst,
+        dst: message.src,
+        messageType: 'data-answer',
+        sessionDescription: AnswerRTCSessionDescription,
+      };
+      this.wsSender(answer);
+    })
+  }
+
+  // when we recive a data answer just set it as description, onicecandidate will be called soon
+  public handleDataAnswer(message: RTCDataSignal){
+    this.peerConnection.setRemoteDescription(message.sessionDescription);
+  }
+
+
+  public handleIceCandidate(message: RTCIceSignal){
+    // get the candidate from the message
+    let candidate = new RTCIceCandidate(message.candidate);
+
+    // add the ice candidate to the connection
+    // will automatically call onicecandidate again if it dosent work
+    this.peerConnection!.addIceCandidate(candidate).then(() =>
+      // it worked!
+      console.log('Ice Candidate successfully added to peerconnection'),
+      // it didn't work!
+      err => {
+        console.log('PR 1: Oh no! We failed to add the candidate');
+        console.log("Here's the error:", err);
+    });
+  }
+}
+
+
+
+
 export class Networking{
   wsServer: string = "ws://localhost:8080"
   socket: WebSocket;
-  peerConnection: RTCPeerConnection = new RTCPeerConnection(); // gets overridden, have to set so you can add event listenders on first signal
-  dataChannel?: RTCDataChannel;
+  peers: Array<Peer> = []; // a host peer will have every peer in the game but a client will only connect to the host
   id?: number;
   gamesList: Array<number> = [];
-  remotes: Array<number> = [];
 
+  // constructor used to setup websockets connection with server
   constructor(){
-    this.socket = new WebSocket(this.wsServer) // websocket is used to communicate with server
+    this.socket = new WebSocket(this.wsServer)
     this.socket.onopen = (e) => {
       console.log("server connection opened");
-      this.wsSend("get-id"); // request an id
+      this.wsSend("get-id"); // request an id as soon as the connection opens
       setInterval(()=>{this.wsSend("ping")}, 2000) // ping server to keep connection alive and server know if client still there
     };
 
@@ -78,195 +226,73 @@ export class Networking{
     };
   }
 
-  // handles any WS messages with type 'rtc-signal'
-  signalHandler(signal: RTCSignal){
-
-    // handle offer, means someones trying to join us
-    const handleDataOffer = (message:RTCDataSignal)=>{
-      console.log("handling data offer")
-      this.peerConnection = new RTCPeerConnection()
-      this.peerConnection.setRemoteDescription(message.sessionDescription);
-      
-      // first set callbacks for once data channel is open
-      // once data channel is created this is called
-      this.peerConnection.ondatachannel = event => {
-        console.log("ondatachannel called")
-        // create data channel object for 
-        this.dataChannel = event.channel;
-
-        // some data channel handlers for peer 1
-        this.dataChannel.onopen = event => {
-          console.log("16. All set!");
-        }
-        this.dataChannel.onclose = event => {
-          console.log("Hey, my data channel was closed!");
-        }
-
-        this.dataChannel.onmessage = event => {
-          console.log("P2: I just got this message:");
-          console.log(event.data);
-          this.onRtcMessage(event.data)
-        }
+  // either gets the existing remote with that id or creates one
+  private remoteFromId(id: number, dontCreate=false): Peer{
+    let temp = this.peers.filter(x=>x.id==id) // filters only remotes with current id
+    if(temp.length >= 1){
+      return temp[0]
+    }else{
+      if(dontCreate){
+        throw "Id dosent exist"
       }
-
-      // then create the response
-      this.peerConnection.createAnswer().then((AnswerRTCSessionDescription) => {
-        console.log("created answer")
-        // set the localdescription as the answer
-        // setting Local Description triggers the peer2connection.onicecandidate event!!
-        this.peerConnection!.setLocalDescription(AnswerRTCSessionDescription);
-    
-        // Prepare a message to send to peer 2
-        let message: RTCDataSignal = {	src: signal.dst,
-          dst: signal.src,
-          messageType: 'data-answer',
-          sessionDescription: AnswerRTCSessionDescription
-        };
-        
-        // send AnswerRTCSessionDescription to peer1 via signaling server
-        this.wsSend("rtc-signal", message)
-      });
+      let newRemote = new Peer(id, this.id!, (response:RTCSignal)=>{this.wsSend("rtc-signal", response)});
+      this.peers.push(newRemote);
+      return this.peers[this.peers.length-1];
     }
-    
-    // when we recive a data answer just set it as description, onicecandidate will be called soon
-    const handleDataAnswer = (message: RTCDataSignal)=>{
-      console.log("handling data answer")
-      this.peerConnection!.setRemoteDescription(message.sessionDescription);
-    }
+  }
 
-    // handle incoming ice candidate
-    const handleIceCandidate = (message: RTCIceSignal)=>{
-      console.log("handling ice candidate")
-      // get the candidate from the message
-      let candidate = new RTCIceCandidate(message.candidate);
+  // handles any WS messages with type 'rtc-signal'
+  private signalHandler(signal: RTCSignal){
 
-      // add the ice candidate to the connection
-      this.peerConnection!.addIceCandidate(candidate).then(() =>
-        // it worked!
-        console.log('    P2 Ice Candidate successfully added to peer1connection'),
-        // it didn't work!
-        err => {
-          console.log('PR 1: Oh no! We failed to add the candidate');
-          console.log("Here's the error:", err);
-        });
-    }
+    let curRemote = this.remoteFromId(signal.src); // gets or creates remote with correct id
 
     console.log("handling signal")
-    console.log(signal.messageType)
+    // call its handle function for this type of message
     switch(signal.messageType){
       case "data-offer":
         console.log("it was a data offer")
-        handleDataOffer(signal)
+        curRemote.handleDataOffer(signal)
         break;
       case "data-answer":
         console.log("it was a data answer")
-        handleDataAnswer(signal)
+        curRemote.handleDataAnswer(signal)
         break;
       case "ice-candidate":
         console.log("it was a ice candidate")
-        handleIceCandidate(signal)
-    }
-
-    // triggered by setting local description
-    // create and send ice candidate
-    this.peerConnection!.onicecandidate = (event) => {
-      console.log("'making' ice candidate")
-      // onicecandidates keep coming until an empty event is passed
-      console.log(`event given to onicecandidate ${JSON.stringify(event)}`)
-      console.log(`second given to onicecandidate ${JSON.stringify(this)}`)
-      if (event.candidate) {
-        // prepare a message to send to peer 2
-        let message: RTCIceSignal = { src: signal.dst,
-          dst: signal.src,
-          messageType: 'ice-candidate',
-          candidate: event.candidate
-        };
-        
-        console.log("    ICE Candidate generated and handled by P1 and sent to P2 via signaling server")
-        // this.socket.send(JSON.stringify({type:"rtc-signal", data:message}));
-        this.wsSend("rtc-signal", message);
-      } else {
-        // no more candidates to send
-        console.log("    All Peer 1 ICE candidates sent!")
-      }
+        curRemote.handleIceCandidate(signal)
+      break;
+      default:
+        console.log("invalid signal recived")
     }
   }
 
   // to create a p2p connection to gameId
-  joinGame(gameId: number){
-    // sends initial RTC message to connect
-
+  public joinGame(gameId: number): void{
+    // sends initial RTC data-offer message to connect
     if(!this.id){console.log("tried to join a game before getting id");return}
-    // this.remoteId = gameId;
-
-    // message from peer 1 to peer 2
-    this.peerConnection = new RTCPeerConnection()
-    // triggered by setting local description
-    this.peerConnection!.onicecandidate = (event) => {
-      console.log("'making' ice candidate, ")
-      // onicecandidates keep coming until an empty event is passed
-      if (event.candidate) {
-        // prepare a message to send to peer 2
-        let message: RTCIceSignal = { src: this.id!,
-          dst: gameId,
-          messageType: 'ice-candidate',
-          candidate: event.candidate
-        };
-        
-        console.log("    ICE Candidate generated and handled by P1 and sent to P2 via signaling server")
-        // this.socket.send(JSON.stringify({type:"rtc-signal", data:message}));
-        this.wsSend("rtc-signal", message);
-      } else {
-        // no more candidates to send
-        console.log("    All Peer 1 ICE candidates sent!")
-      }
-    }
-    this.dataChannel = this.peerConnection.createDataChannel("myFirstDataChannel")
-    this.peerConnection.createOffer().then((OfferRTCSessionDescription) => {
-      // peer1, the offerer, will set the offer to be its Local Description
-      // setting Local Description triggers the peer1connection.onicecandidate event!!
-      this.peerConnection!.setLocalDescription(OfferRTCSessionDescription);
-    
-      // Prepare a message to send to peer 2
-      let message: RTCDataSignal = {
-        src: this.id!,
-        dst: gameId,
-        messageType: 'data-offer',
-        sessionDescription: OfferRTCSessionDescription
-      };
-      console.log(OfferRTCSessionDescription)
-    
-      // send OfferRTCSessionDescription to peer2 via signaling server
-      // this.socket.send(JSON.stringify({type:"rtc-signal", signal:message}));
-      this.wsSend("rtc-signal", message)
-    })
-    // some data channel handlers for peer 1
-    this.dataChannel.onopen = event => {
-      console.log("14. Ice candidates from both peers agreed upon; P1 data channel opened");
-    }
-
-    this.dataChannel.onclose = event => {
-      console.log("P1: Hey, my data channel was closed!");
-    }
-
-    this.dataChannel.onmessage = event => {
-      console.log("P1: I just got this message:");
-      console.log(event.data);
-    }
+    let curRemote = this.remoteFromId(gameId);
+    curRemote.createDataOffer()
   }
 
   // send data to server
-  wsSend(type: "get-id" | "list-games" | "rtc-signal" | "ping", data?: RTCSignal | number){
+  public wsSend(type: "get-id" | "list-games" | "rtc-signal" | "ping", data?: RTCSignal | number){
     this.socket.send(JSON.stringify({type:type, data:data}))
   }
 
-  // send data to all peers
-  rtcSend(){
-
+  // send data to all or some peers peers
+  public rtcSend(data: string, target=-1){
+    // set target to -1 to send to all peers
+    if(target == -1){
+      for(let p of this.peers){
+        p.sendString(data)
+      }
+    }else{
+      this.remoteFromId(target).sendString(data)
+    }
   }
 
   // when you recive data from a peer
-  onRtcMessage(message: string){
+  // onRtcMessage(message: string){
 
-  }
+  // }
 }

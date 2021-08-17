@@ -118,7 +118,9 @@ function pruneClients(){
   // remove inactive clients
   let start_len = clients.length;
   clients = clients.filter(c=>c.alive())
-  console.log(`pruned clients ${clients.length} (${clients.length-start_len})`)
+  if(clients.length-start_len != 0){
+    console.log(`pruned clients ${clients.length} (${clients.length-start_len})`)
+  }
 }
 
 setInterval(pruneClients, 5000);

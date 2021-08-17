@@ -80,7 +80,7 @@ const game = new Game(canvas);
 
 document.getElementById("refreshButton")!.onclick = ()=>{game.refreshGamesList()}
 document.getElementById("joinButton")!.onclick = ()=>{game.joinRandomGame()}
-document.getElementById("testButton")!.onclick = ()=>{game.networking.dataChannel!.send("this is working YAY!"); console.log("send data")}
+document.getElementById("testButton")!.onclick = ()=>{game.networking.rtcSend("this is working YAY!"); console.log("send data")}
 
 function createGameList(list: Array<number>){
     // first clear previouse list
