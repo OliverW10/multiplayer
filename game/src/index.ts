@@ -7,8 +7,8 @@ document.addEventListener('contextmenu', event => event.preventDefault());
 // sets resolution
 
 const setCanvasSize = ()=>{
-    canvas.width = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
-    canvas.height = window.innerHeight|| document.documentElement.clientHeight|| document.body.clientHeight;
+    canvas.width = window.innerWidth// || document.documentElement.clientWidth || document.body.clientWidth;
+    canvas.height = window.innerHeight// || document.documentElement.clientHeight|| document.body.clientHeight;
 }
 setCanvasSize();
 window.onresize = setCanvasSize;

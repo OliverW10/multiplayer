@@ -12,6 +12,7 @@ export class Keyboard{
         document.addEventListener('keydown', (event) => {
             this.keys[event.code] = true;
             this.pressedAnyKey = true;
+            // console.log(this.keys)
         });
         document.addEventListener('keyup', (event) => {
             this.keys[event.code] = false;

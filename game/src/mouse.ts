@@ -6,9 +6,9 @@ export class Mouse{
     right: boolean = false;
     middle: boolean = false;
 
-	constructor(canvas: HTMLCanvasElement){
+	constructor(){ // canvas: HTMLCanvasElement
 
-		canvas.addEventListener('mousemove', (evt: MouseEvent) => {
+		document.addEventListener('mousemove', (evt: MouseEvent) => {
 			const rect: DOMRect = canvas.getBoundingClientRect();
 			this.x = evt.clientX - rect.left;
 			this.y = evt.clientY - rect.top;
