@@ -52,9 +52,9 @@ const randomId = (size = 3) =>
   Math.floor(
     Math.random() * (10 ** size - 10 ** (size - 1)) + 10 ** (size - 1)
   );
-function getNewClientId() {
+function getNewClientId(size = 3) {
   let n = 0;
-  let id = randomId(); // random number thats size digits long
+  let id = randomId(size); // random number thats size digits long
   while (clients.some((x) => x.id === id)) {
     id = randomId; // random number thats size digits long
     n++;

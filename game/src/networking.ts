@@ -8,26 +8,26 @@ import { Game, Map } from "./game.js"
 //   data: RTCSignal | number;
 // }
 
-interface NetworkParent{
-  onPeerMsg: (msg: peerInterface)=>void;
-  onNewPeer: (id: number)=>void;
-}
-
 interface mapMessage {
   type: "world-data";
   data: Map;
 }
 
-interface stateMessage {
+export interface stateMessage {
   type: "game-state";
-  data: gameState;
+  data: Array<playerData>;
 }
 
 export type peerInterface = mapMessage | stateMessage;
 
-interface gameState {
-  playerStates?: Array<playerState>
-  playerActions?: Array<playerAction>
+// interface gameState {
+//   playerStates?: Array<playerState>
+//   playerActions?: Array<playerAction>
+// }
+export interface playerData{
+  x: number;
+  y: number;
+  id: number;
 }
 
 
@@ -54,14 +54,20 @@ class Peer {
   localId: number; // local id is the id of this peer
   ready: boolean = false; // ready to send p2p messages
   wsSender: (message: RTCSignal) => void;
-  parent: NetworkParent;
+  onPeerMsg: (message: peerInterface, id: number) => void;
+  onPeerReady: (id: number) => void;
 
-  constructor(id: number, localId: number, signaler: (message: RTCSignal) => void, parent: NetworkParent) {
+  constructor(id: number, localId: number,
+    signaler: (message: RTCSignal) => void,
+    onPeerMsg: (message: peerInterface, id: number) => void,
+    onNewPeerReady: (id: number)=>void
+  ) {
     this.peerConnection = new RTCPeerConnection();
     this.id = id;
     this.localId = localId;
     this.wsSender = signaler;
-    this.parent = parent;
+    this.onPeerMsg = onPeerMsg;
+    this.onPeerReady = onNewPeerReady;
 
     // first set callbacks for once data channel is open
     // once data channel is created this is called
@@ -101,6 +107,7 @@ class Peer {
       this.dataChannel.onopen = event => {
         console.log("All set!");
         this.ready = true;
+        this.onPeerReady(this.id);
       }
 
       this.dataChannel.onclose = event => {
@@ -108,15 +115,16 @@ class Peer {
       }
 
       this.dataChannel.onmessage = event => {
-        console.log("P1: I just got this message:");
-        console.log(event.data);
-        this.parent.onPeerMsg(JSON.parse(event.data))
+        // console.log("P1: I just got this message:");
+        // console.log(event.data);
+        this.onPeerMsg(JSON.parse(event.data), this.id)
       }
     }
   }
 
   public sendString(data: string) {
-    if (this.ready && this.dataChannel) {
+    if (this.ready) {
+      // console.log(`send message ${JSON.stringify(data)}`)
       this.dataChannel!.send(data);
     } else {
       console.log("tried to send before ready")
@@ -206,17 +214,14 @@ export class Networking {
   id?: number;
   gamesList: Array<number> = [];
   onGameList: (list: Array<number>) => void; // intended to be overridden
-  // onPeerMsg: (message: peerInterface) => void;
-  // onNewPeer: (id: number)=>void;
+  onPeerMsg: (message: peerInterface, id: number) => void = (x)=>{}; // ^
+  onNewPeer: (id: number)=>void = (x)=>{}; //              ^^
   visable: boolean = false;
   hosting: boolean = false; // wether we are the host of the game
   connected: boolean = false; // in a game rn
-  parent: NetworkParent;
 
   // constructor used to setup websockets connection with server
-  constructor(parent: NetworkParent) {
-    // onPeerMsg: (message: peerInterface) => void, onNewPeer: (id: number)=>void // old
-    this.parent = parent
+  constructor() {
     this.socket = new WebSocket(this.wsServer)
     this.socket.onopen = (e) => {
       console.log("server connection opened");
@@ -265,7 +270,21 @@ export class Networking {
       alert(`[WS error] ${error}`);
     };
 
-    this.onGameList = () => { }; // just a placeholder, real callback is passes in call to this.getGames
+    this.onGameList = () => { }; // just a placeholder, real callback is passed in call to this.getGames
+  }
+
+  public setOnPeerMsg(func: (msg: peerInterface, id: number) => void){
+    this.onPeerMsg = func;
+    for(let p of this.peers){
+      p.onPeerMsg = func;
+    }
+  }
+
+  public setOnNewPeer(func: (id: number)=>void): void{
+    this.onNewPeer = func;
+    for(let p of this.peers){
+      p.onPeerReady = func;
+    }
   }
 
   // either gets the existing remote with that id or creates one
@@ -278,8 +297,9 @@ export class Networking {
         throw "ID dosent exist"
       }
       const signaler = (response: RTCSignal) => { this.wsSend("rtc-signal", response)}
-      let newRemote = new Peer(id, this.id!, signaler, this.parent);
+      let newRemote = new Peer(id, this.id!, signaler, this.onPeerMsg, this.onNewPeer);
       this.peers.push(newRemote);
+      console.log("new peer")
       return this.peers[this.peers.length - 1];
     }
   }
@@ -328,7 +348,7 @@ export class Networking {
     if (!this.id) { console.log("tried to join a game before getting id"); return }
     this.hosting = false;
     this.visable = false;
-    let curRemote = this.remoteFromId(gameId);
+    let curRemote = this.remoteFromId(gameId); // likely creates a new peer
     curRemote.createDataOffer()
   }
 
@@ -343,12 +363,16 @@ export class Networking {
   // send data to all or some peers peers
   public rtcSendString(data: string, target = -1) {
     // set target to -1 to send to all peers
-    if (target == -1) {
-      for (let p of this.peers) {
-        p.sendString(data)
+    if(this.connected){
+      if (target == -1) {
+        for (let p of this.peers) {
+          p.sendString(data)
+        }
+      } else {
+        this.remoteFromId(target).sendString(data)
       }
-    } else {
-      this.remoteFromId(target).sendString(data)
+    }else{
+      alert("tried to rtcSend before connected")
     }
   }
 
@@ -370,5 +394,10 @@ export class Networking {
   public toggleVis(): boolean{
     this.setVis(!this.visable)
     return this.visable;
+  }
+
+  // if all peers are ready to send info
+  public isReady(){
+    return this.peers.every(x=>x.ready)
   }
 }
