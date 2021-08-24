@@ -1,8 +1,8 @@
 import { Player } from "./player.js"
 import { Mouse } from "./mouse.js";
 import { Keyboard } from "./keyboard.js"
-import { Networking, peerInterface, stateMessage, playerData } from "./networking.js"
-import { showText, Vector2, Rect, scaleNumber } from "./utils.js"
+import { Networking, peerInterface, playerStateMessage, playerData, playerInputMessage } from "./networking.js"
+import { showText, Vector2, Rect, scaleNumber, round } from "./utils.js"
 
 export type Map = Array<{ p1: Vector2, p2: Vector2 }>
 
@@ -24,59 +24,83 @@ function generateMap(size = 20, density = 0.2): Map {
 class GameHost {
     tickrate = 20;
     map: Map = generateMap()
-    players: Array<playerData> = [];
+    players: Array<Player> = [];
     constructor() {
         // override networkings callbacks
-        networking.setOnPeerMsg((msg, id)=>{
+        networking.setOnPeerMsg((msg, id) => {
             // console.log(`recived message ${JSON.stringify(msg)}`)
-            if(msg.type === "game-state"){
-                this.givePlayerState(id, msg.data[0].x, msg.data[0].y);
-            }else{
+            if (msg.type === "player-input") {
+                // console.log(`input ${JSON.stringify(msg)}`)
+                this.givePlayerInput(id, msg);
+            } else {
                 console.log("host got something unknown")
             }
         })
-        networking.setOnNewPeer(id=>{
+        networking.setOnNewPeer(id => {
             console.log("sending new client the map")
             networking.rtcSendObj({ type: "world-data", data: game.map }, id); // give the new client the map
-            setInterval(()=>{gameHost!.tick()}, 1000 / gameHost!.tickrate)
         })
+
+        setInterval(() => { this.tick() }, 1000 / this.tickrate) // set tick interval to send to clients
         // console.log("sending initial clients the map")
         // networking.rtcSendObj({ type: "world-data", data: this.map })
         console.log("created game host")
     }
 
     tick() {
-        for(let player of this.players){
+        console.log("host network tick")
+        // network tick
+        for (let player of this.players) {
             const info = this.generateGameState(player.id)
-            if(player.id !== networking.id){
-                networking.rtcSendObj({type:"game-state", data:info}, player.id)
-            }else{
+            if (player.id !== networking.id) {
+                networking.rtcSendObj(info, player.id)
+            } else {
                 // send to ourself
-                Game.onPeerMsg({type:"game-state", data:info})
+                Game.onPeerMsg(info)
             }
         }
     }
 
+    phyTick(dt: number) {
+        // phsics update happens more often than network tick
+        // is called from main animation loop
+
+        for (let player of this.players) {
+            player.update(dt)
+        }
+    }
+
     // decides what data to send to the given player
-    generateGameState(id: number = -1): Array<playerData>{
+    generateGameState(id: number = -1): playerStateMessage {
         // id for only sending whats near to the player
         // -1 for sending everything
-        if(id == -1){
-            return this.players
-        }else{
-            return this.players.filter(x=>x.id !== id)
+        if (id == -1) {
+            return {
+                type: "game-state",
+                data: this.players.map(x => x.toData())
+            }
+        } else {
+            return {
+                type: "game-state",
+                // TODO: impliment filter on who to send to who
+                data: this.players.filter(x => true).map(x => x.toData())
+            }
         }
     }
 
     // recives player info
-    givePlayerState(id: number, x: number, y: number){
-        let matches = this.players.filter(x=>x.id === id)
-        if(matches.length >= 1){
-            matches[0].x = x;
-            matches[0].y = y;
-        }else{
-            console.log("tried to set player data on player that doesnt exist")
-            this.players.push({id: id, x:x, y:y})
+    givePlayerInput(id: number, msg: playerInputMessage) {
+        let matches = this.players.filter(x => x.id === id)
+        if (matches.length == 1) {
+            matches[0].inputX = msg.data.inputX;
+            matches[0].inputY = msg.data.inputY;
+        } else if (matches.length > 1) {
+            console.log(`there were ${matches.length} players with the same id (too many)`)
+        } else if (matches.length < 0) {
+            console.log("what the fuck")
+        } else {
+            console.log("tried to set player data on player that doesnt exist, creating player")
+            this.players.push(Player.newRandom(id))
         }
     }
 }
@@ -88,11 +112,13 @@ export class Game {
     framerate: number = 0;
     canvas: HTMLCanvasElement;
     frametimes: Array<number> = [];
-    players: Array<playerData> = [];
-    // player: Player;
+    players: Array<Player> = [];
     map: Array<{ p1: Vector2, p2: Vector2 }> = [];
     viewPos: Rect = new Rect(0, 0, 999, 0.2);
     clientTickRate = 20;
+    lastTickTime: number = 0; // time since last tick
+    inputX = 0; // rotation input + is clockwise
+    inputY = 0; // forwards input + is forwards
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -102,18 +128,30 @@ export class Game {
     public static onPeerMsg(message: peerInterface): void {
         // console.log(`get message`)
         // console.log(message)
-        switch(message.type){
+        switch (message.type) {
             case "world-data":
-                for(let lineRaw of message.data){
-                    let line = {p1:new Vector2(lineRaw.p1.x, lineRaw.p1.y), p2:new Vector2(lineRaw.p2.x, lineRaw.p2.y)};
-                    if(!game.map.some(x=>{x==line})){ // if we dont already have it
+                for (let lineRaw of message.data) {
+                    let line = { p1: new Vector2(lineRaw.p1.x, lineRaw.p1.y), p2: new Vector2(lineRaw.p2.x, lineRaw.p2.y) };
+                    if (!game.map.some(x => { x == line })) { // if we dont already have it
                         game.map.push(line)
                     }
                 }
                 console.log("set map")
-            break;
+                break;
             case "game-state":
-                game.players = message.data;
+                // console.log("got game state")
+                // console.log(JSON.stringify(message))
+                let curIds = game.players.map(x => x.id)
+                for (let player of message.data) {
+                    if (curIds.indexOf(player.id) != -1) {
+                        const idx = curIds.indexOf(player.id)
+                        game.players[idx].networkUpdate(player)
+                    } else {
+                        console.log(`created new player ${player.id}`)
+                        game.players.push(Player.fromPlayerData(player))
+                        curIds = game.players.map(x => x.id)
+                    }
+                }
         }
     }
 
@@ -165,7 +203,6 @@ export class Game {
         }
         // our viewport
         ctx.beginPath();
-        ctx.strokeStyle = "rgba(0, 0, 0, 0.2)";
         ctx.fillStyle = "rgba(200, 200, 200, 0.8)"
         ctx.rect(
             minimapRect.x + this.viewPos.x * minimapRect.w,
@@ -174,14 +211,20 @@ export class Game {
             minimapRect.h * this.viewPos.h);
         ctx.fill();
 
-        // other viewports
+        // our player (should be included in players list)
+
+        // other players
         for (let p of this.players) {
+            p.render(this.canvas, this.viewPos) // render them
+
+            // render them on map
             ctx.beginPath();
+            ctx.fillStyle = "rgba(255, 0, 0, 1)"
             ctx.rect(
-                minimapRect.x + p.x * minimapRect.w,
-                minimapRect.y + p.y * minimapRect.h,
-                minimapRect.w * this.viewPos.w,
-                minimapRect.h * this.viewPos.h);
+                minimapRect.x + p.pos.x * minimapRect.w,
+                minimapRect.y + p.pos.y * minimapRect.h,
+                10,
+                10);
             ctx.fill();
         }
 
@@ -197,21 +240,34 @@ export class Game {
 
     update(dt: number) {
         // dt in ms
-        // for (let i = 0; i < this.players.length; i++) {
-        //     this.players[i].update(dt);
-        // }
+        const dts = dt/1000; // delta time seconds
+
+        for (let i = 0; i < this.players.length; i++) {
+            this.players[i].update(dt);
+        }
+
+        const matches = this.players.filter(x=>x.id===networking.id)
+        if(matches.length < 1){
+            console.log("did get sent our player")
+        }else{
+            const us = matches[0]
+            const viewTarget = new Vector2(us.pos.x, us.pos.y)
+            this.viewPos.setMid(viewTarget.interpolate(this.viewPos.middle(), dts))
+        }   
+
         if (keyboard.checkKey("KeyD")) {
-            this.viewPos.x += dt / 10000;
+            this.inputX += dt;
         }
         if (keyboard.checkKey("KeyA")) {
-            this.viewPos.x -= dt / 10000;
+            this.inputX -= dt;
         }
         if (keyboard.checkKey("KeyW")) {
-            this.viewPos.y -= dt / 10000;
+            this.inputY += dt;
         }
         if (keyboard.checkKey("KeyS")) {
-            this.viewPos.y += dt / 10000;
+            this.inputY -= dt;
         }
+        this.lastTickTime += dt;
 
         this.frametimes.push(dt);
         if (this.frametimes.length > 10) {
@@ -227,35 +283,57 @@ export class Game {
         if (networking.gamesList.some(x => x == id)) {
             networking.joinGame(id);
             gamesListOuter!.style.transform = "translate(-50%, -200%)";
-            setInterval(()=>{this.sendInfo()}, 1000/this.clientTickRate)
+            setInterval(() => { this.sendInput() }, 1000 / this.clientTickRate)
         } else {
             console.log("game dosent exist")
         }
     }
 
     // send the server info for this client
-    sendInfo(){
-        if(!this.isHosting()){
-            if(networking.isReady()){ // tests if peer is ready
-                networking.rtcSendObj({
-                    type: "game-state",
-                    data: [{x:this.viewPos.x, y:this.viewPos.y, id:networking.id}]
-                  } as stateMessage)
-            }else{
+    // called this.tickrate times per second
+    sendInput() {
+        if (!this.isHosting()) {
+            if (networking.isReady()) { // tests if peer is ready
+                networking.rtcSendObj(this.getInput());
+            } else {
                 console.log("isnt ready")
             }
-        }else{
-            console.log("is hosting")
+        } else {
+            console.log("tried to send input on host")
         }
+
+    }
+    // seperate function so it can be used on host
+    getInput(): playerInputMessage {
+        let obj;
+        if (this.lastTickTime > 0) {
+            obj = {
+                type: "player-input",
+                data: {
+                    inputX: round(this.inputX / this.lastTickTime, 2), inputY: round(this.inputY / this.lastTickTime, 2)
+                }
+            } as playerInputMessage;
+        } else {
+            obj = {
+                type: "player-input",
+                data: {
+                    inputX: 0, inputY: 0
+                }
+            } as playerInputMessage;
+        }
+        this.inputX = 0;
+        this.inputY = 0;
+
+        // to prevent divide by 0
+        // when alt tabbed intervals (this) still run but requestAnimationFrame dosent, so no frames happen
+        this.lastTickTime = 0.000001;
+        return obj
     }
     refreshGamesList() {
         networking.getGames((list) => createGameList(list, networking.id!))
     }
-    generateLocalState(): void {
-        
-    }
 
-    isHosting(){
+    isHosting() {
         return networking.hosting
     }
 }
@@ -333,22 +411,24 @@ function tick(nowish: number) {
     let delta: number = nowish - lastTick;
     lastTick = nowish;
 
-    if(game.isHosting()){
-        if(!gameHost){
+    if (game.isHosting()) {
+        if (!gameHost) {
             gameHost = new GameHost();
             game.map = gameHost.map;
         }
         // gameHost.tick() // gameHost sets it own interval for tick
-        gameHost.givePlayerState(networking.id!, game.viewPos.x, game.viewPos.y)
+        gameHost.givePlayerInput(networking.id!, game.getInput()) // TODO: more robust checks for have got id
+
+        gameHost.phyTick(delta);
 
         game.update(delta);
         game.render(ctx);
-    }else{
+    } else {
         // phisUpdates = Math.ceil(delta/physRate)
         game.update(delta);
         game.render(ctx);
     }
-    
+
     window.requestAnimationFrame(tick);
 }
 

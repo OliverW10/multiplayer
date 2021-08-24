@@ -45,6 +45,11 @@ export class Vector2{
     worldToPixel(view:Rect, canvas: HTMLCanvasElement): Vector2{
         return this.worldToView(view).screenToPixel(canvas)
     }
+
+    interpolate(other:Vector2, n=0.5){
+        // n at 1 is other, n at 0 is this
+        return new Vector2(this.x*(1-n)+other.x*n ,  this.y*(1-n)+other.y*n)
+    }
 }
 
 export class Rect{
@@ -70,7 +75,13 @@ export class Rect{
     SE(): Vector2{
         return new Vector2(this.x+this.w, this.y+this.h)
     }
-
+    middle(): Vector2{
+        return new Vector2(this.x+this.w/2, this.y+this.h/2)
+    }
+    setMid(pos: Vector2){
+        this.x = pos.x-this.w/2
+        this.y = pos.y-this.h/2
+    }
 }
 
 // scales a number from range x1-x2 to range z1-z2
@@ -90,3 +101,8 @@ export function clamp(n: number, min: number, max: number): number{
 	return Math.min(Math.max(n, min), max);
 }
 // ctx.fillStyle = "#"+Math.floor(Math.random()*16777215).toString(16); // random colour
+
+export function round(n: number, to=0){
+    let power = 10**to;
+    return Math.round(n*power)/power;
+}

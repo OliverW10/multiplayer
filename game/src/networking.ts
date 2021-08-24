@@ -1,32 +1,60 @@
 // https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking
 // https://raymondgh.github.io/webrtc.html
 
-import { playerAction, playerState } from "./player";
 import { Game, Map } from "./game.js"
-// interface wsInterface{
-//   type: ;
-//   data: RTCSignal | number;
-// }
+import { Vector2 } from "./utils.js";
+
+interface baseAction{
+  // all actions have these
+  id: number;
+  // time: number;
+}
+interface shootAction extends baseAction{
+  type: "shoot";
+  position: Vector2;
+}
+interface grabAction extends baseAction{
+  type: "grab";
+  pointId: number;
+  dist: number;
+}
+interface ungrabAction extends baseAction{
+  type: "ungrab";
+  angle: number;
+}
+interface activateAction extends baseAction{
+  // for exploding a bullet
+  type: "activate";
+}
+export type playerAction = shootAction | grabAction | ungrabAction | activateAction;
 
 interface mapMessage {
   type: "world-data";
   data: Map;
 }
 
-export interface stateMessage {
+export interface playerStateMessage { // send from host to clients
+  // gives out athorative positions of all players to each client, dosent contain all players, just nearby ones
   type: "game-state";
   data: Array<playerData>;
 }
 
-export type peerInterface = mapMessage | stateMessage;
+export interface playerInputMessage{ // send from clients to host
+  // other inputs are send seperatly in actions
+  type: "player-input";
+  data: {
+    inputY: number,
+    inputX: number,
+  }
+}
 
-// interface gameState {
-//   playerStates?: Array<playerState>
-//   playerActions?: Array<playerAction>
-// }
+export type peerInterface = mapMessage | playerInputMessage | playerStateMessage;
+
 export interface playerData{
   x: number;
   y: number;
+  angle: number;
+  speed: number;
   id: number;
 }
 
@@ -377,6 +405,8 @@ export class Networking {
   }
 
   public rtcSendObj(data: any, target = -1){
+    // if target is -1 it sends to all peers
+    // that means that on a client it sends to the host
     this.rtcSendString(JSON.stringify(data), target)
   }
 
