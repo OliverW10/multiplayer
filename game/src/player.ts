@@ -18,11 +18,20 @@ export class Player {
     inputX = 0; // input x is rotational input
     inputY = 0; // input y is speed input
 
-    angleMulti = 1; // multipliers for speed
-    speedMulti = 0.1;
+    TURN = 1; // multipliers for speed
+    ACCEL = 0.1;
+    MAX_SPEED = 5;
+
+    swingPos = new Vector2(0, 0);
+    swingDist = 0;
+    swinging = false;
 
     constructor(id: number) {
         this.id = id;
+    }
+
+    static getAccelAmount(curSpeed: number):number {
+        return 0.05; // TODO
     }
 
     public static fromPlayerData(data: playerData){
@@ -59,11 +68,16 @@ export class Player {
     }
     update(dt: number) {
         const dts = dt/1000;
-        this.speed += this.inputY * dts * this.speedMulti;
-        this.angle += this.inputX * dts * this.angleMulti;
+        if(this.swinging){
+            let nextPosX = this.pos.x + dts * Math.cos(this.angle) * this.speed;
+            let nextPosY = this.pos.y + dts * Math.sin(this.angle) * this.speed;
+        }else{
+            this.speed += this.inputY * dts * Player.getAccelAmount(this.speed);
+            this.angle += this.inputX * dts * this.TURN;
 
-        this.pos.x += dts * Math.cos(this.angle) * this.speed;
-        this.pos.y += dts * Math.sin(this.angle) * this.speed;
+            this.pos.x += dts * Math.cos(this.angle) * this.speed;
+            this.pos.y += dts * Math.sin(this.angle) * this.speed;
+        }
         
 
         // this.x = (this.targetX + this.x)/2; // smoothing because position from networking may be jerky
@@ -75,6 +89,12 @@ export class Player {
             this.pos.y = player.y;
             this.speed = player.speed;
             this.angle = player.angle;
+            if(player.swingPos){
+                this.swingPos = player.swingPos;
+                this.swinging = true;
+            }else{
+                this.swinging = false;
+            }
         }
     }
     // controlUpdate(dt: number, keyboard: Keyboard, mouse: Mouse) {
@@ -88,12 +108,24 @@ export class Player {
     // }
     toData(): playerData{
         // returns playerData object for host to send to clients
-        return {
+        let temp: playerData = {
             id: this.id,
             x: this.pos.x,
             y: this.pos.y,
             angle: this.angle,
-            speed: this.speed
+            speed: this.speed,
         }
+        if(this.swinging){
+            temp["swingPos"] = this.swingPos;
+        }
+        return temp;
     }
+
+    // grab(pos: Vector2){
+    //     this.swingPos = pos;
+    //     this.swinging = true;
+    // }
+    // ungrab(){
+    //     this.swinging = false;
+    // }
 }

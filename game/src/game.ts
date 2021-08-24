@@ -4,7 +4,11 @@ import { Keyboard } from "./keyboard.js"
 import { Networking, peerInterface, playerStateMessage, playerData, playerInputMessage } from "./networking.js"
 import { showText, Vector2, Rect, scaleNumber, round } from "./utils.js"
 
-export type Map = Array<{ p1: Vector2, p2: Vector2 }>
+interface Line{
+    p1: Vector2;
+    p2: Vector2;
+}
+export type Map = Array<Line>
 
 // generate map
 function generateMap(size = 20, density = 0.2): Map {
@@ -14,7 +18,12 @@ function generateMap(size = 20, density = 0.2): Map {
         let y1 = Math.floor(Math.random() * (size - 1)) + 1
         let x2 = x1 + Math.floor(Math.random() * 3) - 1
         let y2 = y1 + Math.floor(Math.random() * 3) - 1
-        lines.push({ p1: new Vector2(x1 / size, y1 / size), p2: new Vector2(x2 / size, y2 / size) })
+        // to stop starting and ending on the same spot
+        while(x1==x2 && y1==y2){
+            x2 = x1 + Math.floor(Math.random() * 3) - 1
+            y2 = y1 + Math.floor(Math.random() * 3) - 1    
+        }
+        lines.push({ p1: new Vector2(x1 / size, y1 / size), p2: new Vector2(x2 / size, y2 / size)})
     }
     return lines
 }
@@ -26,14 +35,16 @@ class GameHost {
     map: Map = generateMap()
     players: Array<Player> = [];
     constructor() {
+        gamesListOuter!.style.transform = "translate(-50%, -200%)";
         // override networkings callbacks
         networking.setOnPeerMsg((msg, id) => {
             // console.log(`recived message ${JSON.stringify(msg)}`)
-            if (msg.type === "player-input") {
-                // console.log(`input ${JSON.stringify(msg)}`)
-                this.givePlayerInput(id, msg);
-            } else {
-                console.log("host got something unknown")
+            switch(msg.type){
+                case("player-input"):
+                    this.givePlayerInput(id, msg);
+                    break;
+                default:
+                    console.log("host got something unknown")
             }
         })
         networking.setOnNewPeer(id => {
@@ -94,6 +105,12 @@ class GameHost {
         if (matches.length == 1) {
             matches[0].inputX = msg.data.inputX;
             matches[0].inputY = msg.data.inputY;
+            if(matches[0].swinging){ // only set swingPos on first one
+                const closest = this.findClosestHandle(new Vector2(matches[0].pos.x, matches[0].pos.y))
+                matches[0].swingPos = closest.pos;
+                matches[0].swingDist = closest.dist;
+            }
+            matches[0].swinging = msg.data.swinging;
         } else if (matches.length > 1) {
             console.log(`there were ${matches.length} players with the same id (too many)`)
         } else if (matches.length < 0) {
@@ -102,6 +119,24 @@ class GameHost {
             console.log("tried to set player data on player that doesnt exist, creating player")
             this.players.push(Player.newRandom(id))
         }
+    }
+
+    findClosestHandle(playerPos: Vector2): {pos:Vector2, dist:number}{
+        let minDist = 9999;
+        let minPos = new Vector2(0, 0)
+        for(let line of this.map){
+            const dist1 = (line.p1.x-playerPos.x)**2 + (line.p1.y-playerPos.y)**2;
+            if(dist1 < minDist){
+                minDist = dist1;
+                minPos = line.p1;
+            }
+            const dist2 = (line.p2.x-playerPos.x)**2 + (line.p2.y-playerPos.y)**2;
+            if(dist2 < minDist){
+                minDist = dist2;
+                minPos = line.p2;
+            }
+        }
+        return {pos:minPos, dist:Math.sqrt(minDist)};
     }
 }
 
@@ -119,6 +154,10 @@ export class Game {
     lastTickTime: number = 0; // time since last tick
     inputX = 0; // rotation input + is clockwise
     inputY = 0; // forwards input + is forwards
+    closesHandle: Vector2 = new Vector2(-1, -1);
+    closesntHandleDist = 99999;
+    grabbing = false;
+    sentGrabbing = false;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -165,27 +204,18 @@ export class Game {
 
         this.viewPos.w = this.viewPos.h * this.canvas.width / this.canvas.height
 
-        // draw map
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = "#000";
-        // console.log(this.map)
-        for (let line of this.map) {
-            if (
-                (line.p1.x > this.viewPos.x && line.p1.x < this.viewPos.x + this.viewPos.w &&
-                    line.p1.y > this.viewPos.y && line.p1.y < this.viewPos.y + this.viewPos.h) ||
-                (line.p2.x > this.viewPos.x && line.p2.x < this.viewPos.x + this.viewPos.w &&
-                    line.p2.y > this.viewPos.y && line.p2.y < this.viewPos.y + this.viewPos.h)
-            ) {
-                ctx.beginPath();
-                let start = line.p1.worldToPixel(this.viewPos, this.canvas)
-                ctx.moveTo(start.x, start.y)
-                let end = line.p2.worldToPixel(this.viewPos, this.canvas)
-                ctx.lineTo(end.x, end.y)
-                ctx.stroke();
-            }
+        if(this.players.length >= 1){
+            this.drawMap();
+            this.drawMinimap();
+            this.drawPlayers();
         }
+        
 
-        // draw minimap outline
+        showText(ctx, Math.round(this.framerate * 100) / 100 + "fps", 100, 50, 30);
+    }
+
+    drawMinimap(){
+        // draw minimap
         let minimapRect = { x: this.canvas.width - 211, y: this.canvas.height - 211, w: 200, h: 200 };
         // background
         ctx.beginPath();
@@ -193,7 +223,8 @@ export class Game {
         ctx.rect(minimapRect.x, minimapRect.y, minimapRect.w, minimapRect.h);
         ctx.fill();
 
-        // actual map
+        // actual minimap
+        ctx.strokeStyle = "rgb(0, 0, 0, 0.9)";
         ctx.lineWidth = 2;
         for (let line of this.map) {
             ctx.beginPath();
@@ -211,13 +242,8 @@ export class Game {
             minimapRect.h * this.viewPos.h);
         ctx.fill();
 
-        // our player (should be included in players list)
-
-        // other players
-        for (let p of this.players) {
-            p.render(this.canvas, this.viewPos) // render them
-
-            // render them on map
+        for(let p of this.players){
+            // render them on minimap
             ctx.beginPath();
             ctx.fillStyle = "rgba(255, 0, 0, 1)"
             ctx.rect(
@@ -234,8 +260,92 @@ export class Game {
         ctx.lineWidth = 3;
         ctx.rect(minimapRect.x, minimapRect.y, minimapRect.w, minimapRect.h);
         ctx.stroke();
+        ctx.beginPath();
+    }
 
-        showText(ctx, Math.round(this.framerate * 100) / 100 + "fps", 100, 50, 30);
+    drawMap(){
+        // draw map
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#000";
+        // console.log(this.map)
+        this.closesHandle = new Vector2(-1, -1);
+        this.closesntHandleDist = 999;
+        for (let line of this.map) {
+            if (
+                (line.p1.x > this.viewPos.x && line.p1.x < this.viewPos.x + this.viewPos.w &&
+                    line.p1.y > this.viewPos.y && line.p1.y < this.viewPos.y + this.viewPos.h) ||
+                (line.p2.x > this.viewPos.x && line.p2.x < this.viewPos.x + this.viewPos.w &&
+                    line.p2.y > this.viewPos.y && line.p2.y < this.viewPos.y + this.viewPos.h)
+            ) {
+                ctx.beginPath();
+                let start = line.p1.worldToPixel(this.viewPos, this.canvas)
+                ctx.moveTo(start.x, start.y)
+                let end = line.p2.worldToPixel(this.viewPos, this.canvas)
+                ctx.lineTo(end.x, end.y)
+                ctx.stroke();
+
+                // find closest handle
+                const dist1 = this.playerDist(line.p1, true)
+                if( dist1 < this.closesntHandleDist){
+                    this.closesHandle = line.p1;
+                    this.closesntHandleDist = dist1;
+                }
+                const dist2 = this.playerDist(line.p2, true)
+                if( dist2 < this.closesntHandleDist){
+                    this.closesHandle = line.p2;
+                    this.closesntHandleDist = dist2;
+                }
+            }
+        }
+
+        // draw handle effect
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(150, 150, 150, 0.8)";
+        ctx.lineWidth = 5;
+        const us = this.getOurPlayer();
+        if(us){
+            let start = us.pos.worldToPixel(this.viewPos, this.canvas)
+            ctx.moveTo(start.x, start.y);
+            let end = this.closesHandle.worldToPixel(this.viewPos, this.canvas)
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(end.x, end.y, 30, 0, Math.PI*2)
+            ctx.stroke();
+        }
+    }
+
+    drawPlayers(){
+        // our player should be included in players list
+        // other players
+        for (let p of this.players) {
+            p.render(this.canvas, this.viewPos) // render them
+        }
+    }
+
+    // finds the distance from any world position to our player
+    playerDist(pos: Vector2, fast=false): number{
+        // fast dosent do the sqrt because if all you care about is relative distance you dont need it
+        const us = this.getOurPlayer()
+        if(us){
+            const ourPos = us.pos;
+            if(fast){
+                return (ourPos.x-pos.x)**2 + (ourPos.y-pos.y)**2
+            }else{
+                return Math.sqrt( (ourPos.x-pos.x)**2 + (ourPos.y-pos.y)**2 )
+            }
+        }
+        return 999;
+    }
+
+    getOurPlayer(): Player | void{
+        const matches = this.players.filter(x=>x.id===networking.id)
+        if(matches.length < 1){
+            return;
+        }else if(matches.length > 1){
+            return;
+        }
+        return matches[0];
     }
 
     update(dt: number) {
@@ -246,14 +356,12 @@ export class Game {
             this.players[i].update(dt);
         }
 
-        const matches = this.players.filter(x=>x.id===networking.id)
-        if(matches.length < 1){
-            console.log("did get sent our player")
-        }else{
-            const us = matches[0]
+        
+        const us = this.getOurPlayer();
+        if(us){
             const viewTarget = new Vector2(us.pos.x, us.pos.y)
-            this.viewPos.setMid(viewTarget.interpolate(this.viewPos.middle(), dts))
-        }   
+            this.viewPos.setMid(viewTarget.interpolate(this.viewPos.middle(), dts))   
+        }
 
         if (keyboard.checkKey("KeyD")) {
             this.inputX += dt;
@@ -267,6 +375,12 @@ export class Game {
         if (keyboard.checkKey("KeyS")) {
             this.inputY -= dt;
         }
+        if(keyboard.checkKey("Space")){
+            this.grabbing = true;
+        }else{
+            this.grabbing = false;
+        }
+
         this.lastTickTime += dt;
 
         this.frametimes.push(dt);
@@ -425,8 +539,10 @@ function tick(nowish: number) {
         game.render(ctx);
     } else {
         // phisUpdates = Math.ceil(delta/physRate)
-        game.update(delta);
-        game.render(ctx);
+        if(networking.isReady() && game.players.length >= 1){
+            game.update(delta);
+            game.render(ctx);
+        }
     }
 
     window.requestAnimationFrame(tick);

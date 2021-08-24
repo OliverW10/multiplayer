@@ -4,30 +4,6 @@
 import { Game, Map } from "./game.js"
 import { Vector2 } from "./utils.js";
 
-interface baseAction{
-  // all actions have these
-  id: number;
-  // time: number;
-}
-interface shootAction extends baseAction{
-  type: "shoot";
-  position: Vector2;
-}
-interface grabAction extends baseAction{
-  type: "grab";
-  pointId: number;
-  dist: number;
-}
-interface ungrabAction extends baseAction{
-  type: "ungrab";
-  angle: number;
-}
-interface activateAction extends baseAction{
-  // for exploding a bullet
-  type: "activate";
-}
-export type playerAction = shootAction | grabAction | ungrabAction | activateAction;
-
 interface mapMessage {
   type: "world-data";
   data: Map;
@@ -45,6 +21,7 @@ export interface playerInputMessage{ // send from clients to host
   data: {
     inputY: number,
     inputX: number,
+    swinging: boolean,
   }
 }
 
@@ -56,6 +33,7 @@ export interface playerData{
   angle: number;
   speed: number;
   id: number;
+  swingPos?: Vector2; // if its not there their not holding anything
 }
 
 
@@ -388,11 +366,17 @@ export class Networking {
     this.socket.send(JSON.stringify({ type: type, data: data }))
   }
 
-  // send data to all or some peers peers
   public rtcSendString(data: string, target = -1) {
     // set target to -1 to send to all peers
+    // set target to -2 to send to host (-1 mostly works but preffer -2 pls)
+    if(this.hosting){
+      if(target === -2){ // host trying to send to its self
+        this.onPeerMsg(JSON.parse(data), this.id!)
+        return;
+      }
+    }
     if(this.connected){
-      if (target == -1) {
+      if (target === -1 || target === -2) {
         for (let p of this.peers) {
           p.sendString(data)
         }
@@ -404,7 +388,12 @@ export class Networking {
     }
   }
 
-  public rtcSendObj(data: any, target = -1){
+  /**
+   * 
+   * @param data peerInterface object to send
+   * @param target id of who to send to, -1 for all, -2 for host
+   */
+  public rtcSendObj(data: peerInterface, target = -1){
     // if target is -1 it sends to all peers
     // that means that on a client it sends to the host
     this.rtcSendString(JSON.stringify(data), target)
