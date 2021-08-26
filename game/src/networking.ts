@@ -1,7 +1,8 @@
 // https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking
 // https://raymondgh.github.io/webrtc.html
 
-import { Game, World } from "./game.js"
+import { World } from "./host.js";
+import { playerData } from "./player.js";
 import { Vector2 } from "./utils.js";
 
 interface mapMessage {
@@ -26,16 +27,6 @@ export interface playerInputMessage{ // send from clients to host
 }
 
 export type peerInterface = mapMessage | playerInputMessage | playerStateMessage;
-
-export interface playerData{
-  x: number;
-  y: number;
-  angle: number;
-  speed: number;
-  id: number;
-  swingPos?: Vector2; // if its not there their not holding anything
-}
-
 
 
 interface RTCDataSignal {
@@ -213,7 +204,7 @@ class Peer {
 
 var pingTime = Date.now();
 
-export class Networking {
+class Networking {
   wsServer: string = "ws://localhost:8080"
   socket: WebSocket;
   peers: Array<Peer> = []; // a host peer will have every peer in the game but a client will only connect to the host
@@ -420,3 +411,6 @@ export class Networking {
     return this.peers.every(x=>x.ready)
   }
 }
+
+// one singleton object shared between all modules using it
+export const networking = new Networking()

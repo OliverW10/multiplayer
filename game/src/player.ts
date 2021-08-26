@@ -1,9 +1,17 @@
-import { World } from "./game.js";
+
+import { World } from "./host.js";
 import { Keyboard } from "./keyboard.js";
 import { Mouse } from "./mouse.js"
-import { playerData } from "./networking.js";
 import { getLineRect, Rect, Vector2 } from "./utils.js";
 
+export interface playerData{
+    x: number;
+    y: number;
+    angle: number;
+    speed: number;
+    id: number;
+    swingPos?: Vector2; // if its not there their not holding anything
+  }
 
 export class Player {
     /*
@@ -33,6 +41,8 @@ export class Player {
     wasSwinging = false;
 
     SWING_COOLDOWN = 1.5;
+
+    bulletPos?: Vector2; // since each player can have max 1 bullet it dosent make sense to have a seperate class
 
     constructor(id: number) {
         this.id = id;
