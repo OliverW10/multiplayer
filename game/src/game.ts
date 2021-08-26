@@ -2,17 +2,33 @@ import { Player } from "./player.js"
 import { Mouse } from "./mouse.js";
 import { Keyboard } from "./keyboard.js"
 import { Networking, peerInterface, playerStateMessage, playerData, playerInputMessage } from "./networking.js"
-import { showText, Vector2, Rect, scaleNumber, round } from "./utils.js"
+import { showText, Vector2, Rect, scaleNumber, round, Line, getLineRect } from "./utils.js"
 
-interface Line{
-    p1: Vector2;
-    p2: Vector2;
+export type World = Array<Line>
+
+// checks if two lines have a shared point
+function checkShared(l1: Line, l2: Line): boolean{
+    return (
+        l1.p1.equals(l2.p1) ||
+        l1.p2.equals(l2.p2) ||
+        l1.p1.equals(l2.p2)
+    )
 }
-export type Map = Array<Line>
 
+// checks if two lines are parralel
+function checkParr(l1: Line, l2: Line): boolean{
+    const ang1 = round(l1.p1.angleTo(l1.p2), 3);
+    const ang1Inv = round(l1.p2.angleTo(l1.p1), 3);
+    const ang2 = round(l2.p1.angleTo(l2.p2), 3);
+    return ang2 == ang1 || ang2 == ang1Inv;
+
+}
+const MAX_LINE_LENGTH = 5;
 // generate map
-function generateMap(size = 20, density = 0.2): Map {
-    let lines: Map = []
+function generateMap(size = 20, density = 0.2): World {
+    let lines: World = []
+
+    // create random lines
     for (let i = 0; i < (size ** 2) * density; i++) {
         let x1 = Math.floor(Math.random() * (size - 1)) + 1
         let y1 = Math.floor(Math.random() * (size - 1)) + 1
@@ -25,14 +41,28 @@ function generateMap(size = 20, density = 0.2): Map {
         }
         lines.push({ p1: new Vector2(x1 / size, y1 / size), p2: new Vector2(x2 / size, y2 / size)})
     }
+
+    // let newLines: Map = []
+    // // check for long straight lines and combined
+    // for(let line of lines){
+    //     // for each line check for other lines with shared points
+    //     const shareds = lines.filter(x=>checkShared(line, x))
+    //     if(shareds.length === 0){
+    //         newLines.push(line);
+    //     }else{
+    //         for(let shared in shareds){
+    //             if(checkParr)
+    //         }
+    //     }
+    // }
     return lines
 }
 
 // only runs on the host, handles phisics, hitreg, game events
 // authorative on everything
 class GameHost {
-    tickrate = 20;
-    map: Map = generateMap()
+    tickrate = 30;
+    map: World = generateMap()
     players: Array<Player> = [];
     constructor() {
         gamesListOuter!.style.transform = "translate(-50%, -200%)";
@@ -59,7 +89,7 @@ class GameHost {
     }
 
     tick() {
-        console.log("host network tick")
+        // console.log("host network tick")
         // network tick
         for (let player of this.players) {
             const info = this.generateGameState(player.id)
@@ -77,7 +107,7 @@ class GameHost {
         // is called from main animation loop
 
         for (let player of this.players) {
-            player.update(dt)
+            player.update(dt, this.map)
         }
     }
 
@@ -105,8 +135,9 @@ class GameHost {
         if (matches.length == 1) {
             matches[0].inputX = msg.data.inputX;
             matches[0].inputY = msg.data.inputY;
-            if(matches[0].swinging){ // only set swingPos on first one
-                const closest = this.findClosestHandle(new Vector2(matches[0].pos.x, matches[0].pos.y))
+            if(msg.data.swinging && !matches[0].swinging){ // only set swingPos on first one
+                console.log("set swinging")
+                const closest = this.findClosestHandle(matches[0])
                 matches[0].swingPos = closest.pos;
                 matches[0].swingDist = closest.dist;
             }
@@ -121,19 +152,23 @@ class GameHost {
         }
     }
 
-    findClosestHandle(playerPos: Vector2): {pos:Vector2, dist:number}{
+    findClosestHandle(player: Player): {pos:Vector2, dist:number}{
         let minDist = 9999;
         let minPos = new Vector2(0, 0)
         for(let line of this.map){
-            const dist1 = (line.p1.x-playerPos.x)**2 + (line.p1.y-playerPos.y)**2;
+            const dist1 = (line.p1.x-player.pos.x)**2 + (line.p1.y-player.pos.y)**2;
             if(dist1 < minDist){
-                minDist = dist1;
-                minPos = line.p1;
+                if(!player.recentlySwung.some((x)=>x.p.equals(line.p1))){
+                    minDist = dist1;
+                    minPos = line.p1;
+                }
             }
-            const dist2 = (line.p2.x-playerPos.x)**2 + (line.p2.y-playerPos.y)**2;
+            const dist2 = (line.p2.x-player.pos.x)**2 + (line.p2.y-player.pos.y)**2;
             if(dist2 < minDist){
-                minDist = dist2;
-                minPos = line.p2;
+                if(!player.recentlySwung.some((x)=>x.p.equals(line.p2))){
+                    minDist = dist2;
+                    minPos = line.p2;
+                }
             }
         }
         return {pos:minPos, dist:Math.sqrt(minDist)};
@@ -150,7 +185,9 @@ export class Game {
     players: Array<Player> = [];
     map: Array<{ p1: Vector2, p2: Vector2 }> = [];
     viewPos: Rect = new Rect(0, 0, 999, 0.2);
-    clientTickRate = 20;
+    VIEW_MARGIN = 0.1; // draw things up to 0.2 outside view to prevent popin 
+    outerViewPos: Rect = new Rect(0, 0, 999, 0.3);
+    clientTickRate = 30;
     lastTickTime: number = 0; // time since last tick
     inputX = 0; // rotation input + is clockwise
     inputY = 0; // forwards input + is forwards
@@ -158,6 +195,7 @@ export class Game {
     closesntHandleDist = 99999;
     grabbing = false;
     sentGrabbing = false;
+    us: Player | void | undefined;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -203,6 +241,16 @@ export class Game {
         ctx.fill();
 
         this.viewPos.w = this.viewPos.h * this.canvas.width / this.canvas.height
+
+        // TODO: maybe dont need to call every frame
+        this.outerViewPos = new Rect(
+            this.viewPos.x-this.VIEW_MARGIN/2,
+            this.viewPos.y-this.VIEW_MARGIN/2,
+            this.viewPos.w+this.VIEW_MARGIN,
+            this.viewPos.h+this.VIEW_MARGIN
+        );
+        // same here
+        this.us = this.getOurPlayer();
 
         if(this.players.length >= 1){
             this.drawMap();
@@ -272,11 +320,21 @@ export class Game {
         this.closesntHandleDist = 999;
         for (let line of this.map) {
             if (
-                (line.p1.x > this.viewPos.x && line.p1.x < this.viewPos.x + this.viewPos.w &&
-                    line.p1.y > this.viewPos.y && line.p1.y < this.viewPos.y + this.viewPos.h) ||
-                (line.p2.x > this.viewPos.x && line.p2.x < this.viewPos.x + this.viewPos.w &&
-                    line.p2.y > this.viewPos.y && line.p2.y < this.viewPos.y + this.viewPos.h)
-            ) {
+                (line.p1.x > this.outerViewPos.x && line.p1.x < this.outerViewPos.x + this.outerViewPos.w &&
+                    line.p1.y > this.outerViewPos.y && line.p1.y < this.outerViewPos.y + this.outerViewPos.h) ||
+                (line.p2.x > this.outerViewPos.x && line.p2.x < this.outerViewPos.x + this.outerViewPos.w &&
+                    line.p2.y > this.outerViewPos.y && line.p2.y < this.outerViewPos.y + this.outerViewPos.h)
+            ) { // only run for lines within view + viewMargin
+                const colBox = getLineRect(line);
+                ctx.beginPath();
+                if(colBox.checkPos(this.getOurPlayer()!.pos)){
+                    ctx.fillStyle = "rgba(100, 100, 100, 0.5)";
+                }else{
+                    ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
+                }
+                const rectPix = colBox.worldToPixel(this.viewPos, this.canvas);
+                ctx.rect(rectPix.x, rectPix.y, rectPix.w, rectPix.h);
+                ctx.fill();
                 ctx.beginPath();
                 let start = line.p1.worldToPixel(this.viewPos, this.canvas)
                 ctx.moveTo(start.x, start.y)
@@ -284,34 +342,38 @@ export class Game {
                 ctx.lineTo(end.x, end.y)
                 ctx.stroke();
 
-                // find closest handle
-                const dist1 = this.playerDist(line.p1, true)
-                if( dist1 < this.closesntHandleDist){
-                    this.closesHandle = line.p1;
-                    this.closesntHandleDist = dist1;
-                }
-                const dist2 = this.playerDist(line.p2, true)
-                if( dist2 < this.closesntHandleDist){
-                    this.closesHandle = line.p2;
-                    this.closesntHandleDist = dist2;
+                if(this.us && !this.us.swinging){
+                    // finding closest handle
+                    const dist1 = this.playerDist(line.p1, true)
+                    if( dist1 < this.closesntHandleDist && !this.us.recentlySwung.some((x)=>x.p.equals(line.p1))){
+                        this.closesHandle = line.p1;
+                        this.closesntHandleDist = dist1;
+                    }
+                    const dist2 = this.playerDist(line.p2, true)
+                    if( dist2 < this.closesntHandleDist && !this.us.recentlySwung.some((x)=>x.p.equals(line.p2))){
+                        this.closesHandle = line.p2;
+                        this.closesntHandleDist = dist2;
+                    }
                 }
             }
         }
 
-        // draw handle effect
-        ctx.beginPath();
-        ctx.strokeStyle = "rgba(150, 150, 150, 0.8)";
-        ctx.lineWidth = 5;
-        const us = this.getOurPlayer();
-        if(us){
-            let start = us.pos.worldToPixel(this.viewPos, this.canvas)
-            ctx.moveTo(start.x, start.y);
-            let end = this.closesHandle.worldToPixel(this.viewPos, this.canvas)
-            ctx.lineTo(end.x, end.y);
-            ctx.stroke();
+        if(this.us && this.closesntHandleDist < 998){
+            // draw handle effect
             ctx.beginPath();
-            ctx.arc(end.x, end.y, 30, 0, Math.PI*2)
-            ctx.stroke();
+            ctx.strokeStyle = "rgba(150, 150, 150, 0.8)";
+            ctx.lineWidth = 5;
+            const us = this.getOurPlayer();
+            if(us){
+                let start = us.pos.worldToPixel(this.viewPos, this.canvas)
+                ctx.moveTo(start.x, start.y);
+                let end = this.closesHandle.worldToPixel(this.viewPos, this.canvas)
+                ctx.lineTo(end.x, end.y);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(end.x, end.y, 30, 0, Math.PI*2)
+                ctx.stroke();
+            }
         }
     }
 
@@ -326,9 +388,8 @@ export class Game {
     // finds the distance from any world position to our player
     playerDist(pos: Vector2, fast=false): number{
         // fast dosent do the sqrt because if all you care about is relative distance you dont need it
-        const us = this.getOurPlayer()
-        if(us){
-            const ourPos = us.pos;
+        if(this.us){
+            const ourPos = this.us.pos;
             if(fast){
                 return (ourPos.x-pos.x)**2 + (ourPos.y-pos.y)**2
             }else{
@@ -353,14 +414,14 @@ export class Game {
         const dts = dt/1000; // delta time seconds
 
         for (let i = 0; i < this.players.length; i++) {
-            this.players[i].update(dt);
+            this.players[i].update(dt, this.map);
         }
 
         
         const us = this.getOurPlayer();
         if(us){
             const viewTarget = new Vector2(us.pos.x, us.pos.y)
-            this.viewPos.setMid(viewTarget.interpolate(this.viewPos.middle(), dts))   
+            this.viewPos.setMid(viewTarget.interpolate(this.viewPos.middle(), dts*0.01))
         }
 
         if (keyboard.checkKey("KeyD")) {
@@ -424,14 +485,18 @@ export class Game {
             obj = {
                 type: "player-input",
                 data: {
-                    inputX: round(this.inputX / this.lastTickTime, 2), inputY: round(this.inputY / this.lastTickTime, 2)
+                    inputX: round(this.inputX / this.lastTickTime, 2),
+                    inputY: round(this.inputY / this.lastTickTime, 2),
+                    swinging: this.grabbing,
                 }
             } as playerInputMessage;
         } else {
             obj = {
                 type: "player-input",
                 data: {
-                    inputX: 0, inputY: 0
+                    inputX: 0,
+                    inputY: 0,
+                    swinging: this.grabbing,
                 }
             } as playerInputMessage;
         }

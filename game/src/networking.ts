@@ -1,12 +1,12 @@
 // https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking
 // https://raymondgh.github.io/webrtc.html
 
-import { Game, Map } from "./game.js"
+import { Game, World } from "./game.js"
 import { Vector2 } from "./utils.js";
 
 interface mapMessage {
   type: "world-data";
-  data: Map;
+  data: World;
 }
 
 export interface playerStateMessage { // send from host to clients

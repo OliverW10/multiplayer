@@ -22,10 +22,25 @@ export class Vector2{
         this.y = y;
     }
     
+    // makes the vector have length 1 from origin
     normalize(): Vector2{
         // creates a new vector2
         let l = Math.sqrt(this.x**2 + this.y**2)
         return new Vector2(this.x/l, this.y/l)
+    }
+    
+    angleFrom(from=new Vector2(0, 0)): number{
+        return Math.atan2(this.y-from.x, this.x-from.y);
+    }
+    angleTo(to: Vector2): number{
+        return Math.atan2(to.y-this.y, to.x-this.x)
+    }
+    length(): number{
+        return Math.sqrt(this.x**2 + this.y**2)
+    }
+
+    distanceTo(to:Vector2){
+        return Math.sqrt((to.x-this.x)**2 + (to.y-this.y)**2)
     }
 
     // transforms a position from world corodinates to screen cordinates
@@ -49,6 +64,24 @@ export class Vector2{
     interpolate(other:Vector2, n=0.5){
         // n at 1 is other, n at 0 is this
         return new Vector2(this.x*(1-n)+other.x*n ,  this.y*(1-n)+other.y*n)
+    }
+
+    minus(other: Vector2): Vector2{
+        return new Vector2(this.x-other.x, this.y-other.y)
+    }
+    plus(other: Vector2): Vector2{
+        return new Vector2(this.x+other.x, this.y+other.y)
+    }
+    times(other: Vector2 | number): Vector2{
+        if(typeof(other) === "number"){
+            return new Vector2(this.x*other, this.y*other)
+        }else{
+            return new Vector2(this.x*other.x, this.y*other.y)
+        }
+    }
+
+    equals(other: Vector2): boolean{
+        return other.x===this.x && other.y===this.y;
     }
 }
 
@@ -82,6 +115,35 @@ export class Rect{
         this.x = pos.x-this.w/2
         this.y = pos.y-this.h/2
     }
+    checkPos(pos: Vector2): boolean{
+        // does a box check for wether the pos is in this
+        return (
+            pos.x > this.x &&
+            pos.x < this.x+this.w &&
+            pos.y > this.y &&
+            pos.y < this.y+this.h
+        ) 
+    }
+
+    // transforms a position from world corodinates to screen cordinates
+    worldToView(view: Rect): Rect{
+        return new Rect(
+            (this.x-view.x) / view.w,
+            (this.y-view.y) / view.h,
+            this.w/view.w,
+            this.h/view.h,
+        )
+    }
+
+    // transform a screen position 0-1 to pixel cordinate
+    screenToPixel(canvas: HTMLCanvasElement): Rect{
+        return new Rect(this.x*canvas.width, this.y*canvas.height, this.w*canvas.width, this.h*canvas.height)
+    }
+
+    // from world to screen pixels
+    worldToPixel(view:Rect, canvas: HTMLCanvasElement): Rect{
+        return this.worldToView(view).screenToPixel(canvas)
+    }
 }
 
 // scales a number from range x1-x2 to range z1-z2
@@ -106,3 +168,18 @@ export function round(n: number, to=0){
     let power = 10**to;
     return Math.round(n*power)/power;
 }
+export interface Line{
+    p1: Vector2;
+    p2: Vector2;
+}
+
+export function getLineRect(line: Line, margin = 0.01): Rect{
+    // gets an outer bounding rectangle for a line
+    const x1 = Math.min(line.p1.x, line.p2.x)-margin;
+    const y1 = Math.min(line.p1.y, line.p2.y)-margin;
+    const x2 = Math.max(line.p1.x, line.p2.x)+margin;
+    const y2 = Math.max(line.p1.y, line.p2.y)+margin;
+    
+    return new Rect(x1, y1, x2-x1, y2-y1)
+}
+
