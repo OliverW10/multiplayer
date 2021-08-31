@@ -1,6 +1,6 @@
 import { Player } from "./player.js"
-import { Mouse } from "./mouse.js";
-import { Keyboard } from "./keyboard.js"
+import { mouse } from "./mouse.js";
+import { keyboard } from "./keyboard.js"
 import { networking, peerInterface, playerInputMessage } from "./networking.js"
 import { showText, Vector2, Rect, round, getLineRect } from "./utils.js"
 import { GameHost } from "./host.js";
@@ -11,7 +11,6 @@ import { GameHost } from "./host.js";
 // will run the same wether you are the host or client
 export class Game {
     framerate: number = 0;
-    canvas: HTMLCanvasElement;
     frametimes: Array<number> = [];
     players: Array<Player> = [];
     map: Array<{ p1: Vector2, p2: Vector2 }> = [];
@@ -22,14 +21,16 @@ export class Game {
     lastTickTime: number = 0; // time since last tick
     inputX = 0; // rotation input + is clockwise
     inputY = 0; // forwards input + is forwards
+    lookAngle = 0;
     closesHandle: Vector2 = new Vector2(-1, -1);
     closesntHandleDist = 99999;
     grabbing = false;
-    sentGrabbing = false;
+    shooting = false;
+    detonating = false;
     us: Player | void | undefined;
+    joiningInterval: number = 0;
 
-    constructor(canvas: HTMLCanvasElement) {
-        this.canvas = canvas;
+    constructor() {
         this.players = [];
     }
 
@@ -60,18 +61,19 @@ export class Game {
                         curIds = game.players.map(x => x.id)
                     }
                 }
+                networking.rtcSendObj({type:"pong", frame: message.frame});
         }
     }
 
     render(ctx: CanvasRenderingContext2D) {
         ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         ctx.fillStyle = "red";
         ctx.arc(mouse.x, mouse.y, 10, 0, Math.PI * 2);
         ctx.fill();
 
-        this.viewPos.w = this.viewPos.h * this.canvas.width / this.canvas.height
+        this.viewPos.w = this.viewPos.h * canvas.width / canvas.height
 
         // TODO: maybe dont need to call every frame
         this.outerViewPos = new Rect(
@@ -95,7 +97,7 @@ export class Game {
 
     drawMinimap(){
         // draw minimap
-        let minimapRect = { x: this.canvas.width - 211, y: this.canvas.height - 211, w: 200, h: 200 };
+        let minimapRect = { x: canvas.width - 211, y: canvas.height - 211, w: 200, h: 200 };
         // background
         ctx.beginPath();
         ctx.fillStyle = "rgba(200, 200, 200, 0.8)"
@@ -163,13 +165,13 @@ export class Game {
                 }else{
                     ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
                 }
-                const rectPix = colBox.worldToPixel(this.viewPos, this.canvas);
+                const rectPix = colBox.worldToPixel(this.viewPos, canvas);
                 ctx.rect(rectPix.x, rectPix.y, rectPix.w, rectPix.h);
                 ctx.fill();
                 ctx.beginPath();
-                let start = line.p1.worldToPixel(this.viewPos, this.canvas)
+                let start = line.p1.worldToPixel(this.viewPos, canvas)
                 ctx.moveTo(start.x, start.y)
-                let end = line.p2.worldToPixel(this.viewPos, this.canvas)
+                let end = line.p2.worldToPixel(this.viewPos, canvas)
                 ctx.lineTo(end.x, end.y)
                 ctx.stroke();
 
@@ -196,9 +198,9 @@ export class Game {
             ctx.lineWidth = 5;
             const us = this.getOurPlayer();
             if(us){
-                let start = us.pos.worldToPixel(this.viewPos, this.canvas)
+                let start = us.pos.worldToPixel(this.viewPos, canvas)
                 ctx.moveTo(start.x, start.y);
-                let end = this.closesHandle.worldToPixel(this.viewPos, this.canvas)
+                let end = this.closesHandle.worldToPixel(this.viewPos, canvas)
                 ctx.lineTo(end.x, end.y);
                 ctx.stroke();
                 ctx.beginPath();
@@ -212,7 +214,7 @@ export class Game {
         // our player should be included in players list
         // other players
         for (let p of this.players) {
-            p.render(this.canvas, this.viewPos) // render them
+            p.render(this.viewPos) // render them
         }
     }
 
@@ -248,12 +250,6 @@ export class Game {
             this.players[i].update(dt, this.map);
         }
 
-        
-        const us = this.getOurPlayer();
-        if(us){
-            const viewTarget = new Vector2(us.pos.x, us.pos.y)
-            this.viewPos.setMid(viewTarget.interpolate(this.viewPos.middle(), dts*0.01))
-        }
 
         if (keyboard.checkKey("KeyD")) {
             this.inputX += dt;
@@ -273,7 +269,20 @@ export class Game {
             this.grabbing = false;
         }
 
+        this.shooting = mouse.hasClicked("left");
+        this.detonating = mouse.right;
+
         this.lastTickTime += dt;
+
+        const us = this.getOurPlayer();
+        if(us){
+            const viewTarget = new Vector2(us.pos.x, us.pos.y)
+            this.viewPos.setMid(viewTarget.interpolate(this.viewPos.middle(), 1-(dts*5)))
+            const outDrawPos = us.pos.worldToPixel(this.viewPos, canvas);
+            this.lookAngle = outDrawPos.angleTo( new Vector2(mouse.x, mouse.y));
+            us.setLookAngle(this.lookAngle)
+            us.takeInput(this.getInput(false), this.map) // only for local
+        }
 
         this.frametimes.push(dt);
         if (this.frametimes.length > 10) {
@@ -289,7 +298,9 @@ export class Game {
         if (networking.gamesList.some(x => x == id)) {
             networking.joinGame(id);
             gamesListOuter!.style.transform = "translate(-50%, -200%)";
-            setInterval(() => { this.sendInput() }, 1000 / this.clientTickRate)
+
+            this.joiningInterval = setInterval(() => { this.sendInput() }, 1000/this.clientTickRate);
+            game.sendInput(); // send input back after the tick
         } else {
             console.log("game dosent exist")
         }
@@ -297,46 +308,39 @@ export class Game {
 
     // send the server info for this client
     // called this.tickrate times per second
+    // also used on host beacuse -2 routes host traffic directly
     sendInput() {
-        if (!this.isHosting()) {
-            if (networking.isReady()) { // tests if peer is ready
-                networking.rtcSendObj(this.getInput());
-            } else {
-                console.log("isnt ready")
-            }
+        if (networking.isReady()) { // tests if peer is ready
+            networking.rtcSendObj(this.getInput(), -2);
         } else {
-            console.log("tried to send input on host")
+            console.log("isnt ready")
         }
-
     }
-    // seperate function so it can be used on host
-    getInput(): playerInputMessage {
-        let obj;
-        if (this.lastTickTime > 0) {
-            obj = {
-                type: "player-input",
-                data: {
-                    inputX: round(this.inputX / this.lastTickTime, 2),
-                    inputY: round(this.inputY / this.lastTickTime, 2),
-                    swinging: this.grabbing,
-                }
-            } as playerInputMessage;
-        } else {
-            obj = {
-                type: "player-input",
-                data: {
-                    inputX: 0,
-                    inputY: 0,
-                    swinging: this.grabbing,
-                }
-            } as playerInputMessage;
-        }
-        this.inputX = 0;
-        this.inputY = 0;
 
-        // to prevent divide by 0
-        // when alt tabbed intervals (this) still run but requestAnimationFrame dosent, so no frames happen
-        this.lastTickTime = 0.000001;
+    // seperate function so it can be used on host
+    // send frame of -1 to not perform lag calculations
+    getInput(forSend=true): playerInputMessage {
+        const obj = {
+            type: "player-input",
+            data: {
+                // set input to zero if there hasnt been any frames
+                // when alt tabbed intervals (this) still run but requestAnimationFrame dosent, so no frames happen
+                inputX: this.lastTickTime > 0 ? round(this.inputX / this.lastTickTime, 2) : 0,
+                inputY: this.lastTickTime > 0 ? round(this.inputY / this.lastTickTime, 2) : 0,
+                lookAngle: this.lookAngle,
+            },
+        } as playerInputMessage;
+
+        if(this.grabbing){ obj.data["swinging"] = true }
+        if(this.shooting){  obj.data["shooting"] = true }
+        if(this.detonating){ obj.data["detonating"] = true }
+
+        if(forSend){
+            this.inputX = 0;
+            this.inputY = 0;
+
+            this.lastTickTime = 0; // time since last getInput (dt added in update)
+        }
         return obj
     }
     refreshGamesList() {
@@ -350,10 +354,7 @@ export class Game {
 
 // const physsRate: number = 100; // goal framerate for physics
 
-const mouse = new Mouse();
-const keyboard = new Keyboard();
-
-const game = new Game(canvas);
+const game = new Game();
 networking.setOnPeerMsg(Game.onPeerMsg)
 let gameHost: GameHost | undefined; // dont initialize
 
@@ -416,7 +417,7 @@ function createGameList(list: Array<number>, ourId: number) {
 
 
 let lastTick: number = performance.now()
-function tick(nowish: number) {
+function tick(nowish: number) { // local updates only
     let delta: number = nowish - lastTick;
     lastTick = nowish;
 
@@ -424,9 +425,9 @@ function tick(nowish: number) {
         if (!gameHost) {
             gameHost = new GameHost();
             game.map = gameHost.map;
+            gameHost.takePlayerInput(networking.id!, game.getInput()) // send input at start
         }
         // gameHost.tick() // gameHost sets it own interval for tick
-        gameHost.givePlayerInput(networking.id!, game.getInput()) // TODO: more robust checks for have got id
 
         gameHost.phyTick(delta);
 

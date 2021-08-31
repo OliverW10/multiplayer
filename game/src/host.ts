@@ -1,5 +1,5 @@
 import { Game, gamesListOuter } from "./game.js";
-import { networking, playerInputMessage, playerStateMessage } from "./networking.js";
+import { networking, playerInputMessage, playerStateMessage, pong } from "./networking.js";
 import { Player } from "./player.js";
 import { Line, round, Vector2 } from "./utils.js";
 
@@ -61,6 +61,8 @@ function generateMap(size = 20, density = 0.2): World {
 // authorative on everything
 export class GameHost {
     tickrate = 30;
+    tickNum = 0;
+    tickTimes: Array<{num: number, time: number}> = [];
     map: World = generateMap()
     players: Array<Player> = [];
     constructor() {
@@ -70,7 +72,10 @@ export class GameHost {
             // console.log(`recived message ${JSON.stringify(msg)}`)
             switch(msg.type){
                 case("player-input"):
-                    this.givePlayerInput(id, msg);
+                    this.takePlayerInput(id, msg);
+                    break;
+                case("pong"):
+                    this.takePing(id, msg);
                     break;
                 default:
                     console.log("host got something unknown")
@@ -88,6 +93,10 @@ export class GameHost {
     }
 
     tick() {
+        this.tickNum += 1;
+        if(this.tickTimes.push({num: this.tickNum, time: performance.now()}) >= 30){ // push returns length
+            this.tickTimes.shift()
+        }
         // console.log("host network tick")
         // network tick
         for (let player of this.players) {
@@ -117,59 +126,43 @@ export class GameHost {
         if (id == -1) {
             return {
                 type: "game-state",
-                data: this.players.map(x => x.toData())
+                data: this.players.map(x => x.toData()),
+                frame: this.tickNum,
             }
         } else {
             return {
                 type: "game-state",
                 // TODO: impliment filter on who to send to who
-                data: this.players.filter(x => true).map(x => x.toData())
+                data: this.players.filter(x => true).map(x => x.toData()),
+                frame: this.tickNum,
             }
+        }
+    }
+
+    takePing(id: number, msg: pong){
+        const timeMatches = this.tickTimes.filter(x=>x.num == msg.frame) // find the time the frame was send out
+        if(timeMatches.length >= 1){
+            var frameActualTime = timeMatches[0].time;
+        }else{
+            var frameActualTime = 0; // frame has been sent
+        }
+        const returnFrameTime = performance.now()
+        let matches = this.players.filter(x => x.id === id)
+        if (matches.length == 1) {
+            matches[0].ping = returnFrameTime-frameActualTime;
         }
     }
 
     // recives player info
-    givePlayerInput(id: number, msg: playerInputMessage) {
+    takePlayerInput(id: number, msg: playerInputMessage) {
         let matches = this.players.filter(x => x.id === id)
         if (matches.length == 1) {
-            matches[0].inputX = msg.data.inputX;
-            matches[0].inputY = msg.data.inputY;
-            if(msg.data.swinging && !matches[0].swinging){ // only set swingPos on first one
-                console.log("set swinging")
-                const closest = this.findClosestHandle(matches[0])
-                matches[0].swingPos = closest.pos;
-                matches[0].swingDist = closest.dist;
-            }
-            matches[0].swinging = msg.data.swinging;
+            matches[0].takeInput(msg, this.map)
         } else if (matches.length > 1) {
             console.log(`there were ${matches.length} players with the same id (too many)`)
-        } else if (matches.length < 0) {
-            console.log("what the fuck")
         } else {
             console.log("tried to set player data on player that doesnt exist, creating player")
             this.players.push(Player.newRandom(id))
         }
-    }
-
-    findClosestHandle(player: Player): {pos:Vector2, dist:number}{
-        let minDist = 9999;
-        let minPos = new Vector2(0, 0)
-        for(let line of this.map){
-            const dist1 = (line.p1.x-player.pos.x)**2 + (line.p1.y-player.pos.y)**2;
-            if(dist1 < minDist){
-                if(!player.recentlySwung.some((x)=>x.p.equals(line.p1))){
-                    minDist = dist1;
-                    minPos = line.p1;
-                }
-            }
-            const dist2 = (line.p2.x-player.pos.x)**2 + (line.p2.y-player.pos.y)**2;
-            if(dist2 < minDist){
-                if(!player.recentlySwung.some((x)=>x.p.equals(line.p2))){
-                    minDist = dist2;
-                    minPos = line.p2;
-                }
-            }
-        }
-        return {pos:minPos, dist:Math.sqrt(minDist)};
     }
 }

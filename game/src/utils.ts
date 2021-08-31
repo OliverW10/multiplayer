@@ -168,6 +168,10 @@ export function round(n: number, to=0){
     let power = 10**to;
     return Math.round(n*power)/power;
 }
+export function random(min: number, max: number): number{
+    return Math.random()*(max-min)+min;
+}
+
 export interface Line{
     p1: Vector2;
     p2: Vector2;
@@ -183,3 +187,34 @@ export function getLineRect(line: Line, margin = 0.01): Rect{
     return new Rect(x1, y1, x2-x1, y2-y1)
 }
 
+function lerp(a:number, b:number, n:number): number{
+    return a*(1-n) + b*n;
+}
+
+export class Colour{
+    // holds three number, can be rgb or hsl. as well as a alpha
+    a: number;
+    b: number;
+    c: number;
+    alpha: number;
+    constructor(a: number, b:number, c:number, alpha: number){
+        this.a = a;
+        this.b = b;
+        this.c = c;
+        this.alpha = alpha;
+    }
+    lerp(other: Colour, n: number = 0.5){
+        return new Colour(
+            lerp(this.a, other.a, n),
+            lerp(this.b, other.b, n),
+            lerp(this.c, other.c, n),
+            lerp(this.alpha, other.alpha, n)
+        )
+    }
+    toRgb(): string{
+        return `rgba(${this.a}, ${this.b}, ${this.c}, ${this.alpha})`
+    }
+    toHsl(): string{
+        return `hsla(${this.a}, ${this.b}, ${this.c}, ${this.alpha})`
+    }
+}

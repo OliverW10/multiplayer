@@ -3,7 +3,9 @@
 
 import { World } from "./host.js";
 import { playerData } from "./player.js";
-import { Vector2 } from "./utils.js";
+
+
+const WS_SERVER = "wss://multiplayer-backend.olikat.repl.co"
 
 interface mapMessage {
   type: "world-data";
@@ -14,19 +16,28 @@ export interface playerStateMessage { // send from host to clients
   // gives out athorative positions of all players to each client, dosent contain all players, just nearby ones
   type: "game-state";
   data: Array<playerData>;
+  frame: number;
 }
 
 export interface playerInputMessage{ // send from clients to host
-  // other inputs are send seperatly in actions
   type: "player-input";
   data: {
     inputY: number,
     inputX: number,
-    swinging: boolean,
-  }
+    lookAngle: number;
+    // all action input are optional to save data, assumed false when not present
+    swinging? : boolean,
+    shooting? : boolean,
+    detonating? : boolean,
+  },
 }
 
-export type peerInterface = mapMessage | playerInputMessage | playerStateMessage;
+export interface pong{
+  type: "pong";
+  frame: number;
+}
+
+export type peerInterface = mapMessage | playerInputMessage | playerStateMessage | pong;
 
 
 interface RTCDataSignal {
@@ -205,7 +216,6 @@ class Peer {
 var pingTime = Date.now();
 
 class Networking {
-  wsServer: string = "ws://localhost:8080"
   socket: WebSocket;
   peers: Array<Peer> = []; // a host peer will have every peer in the game but a client will only connect to the host
   id?: number;
@@ -219,7 +229,7 @@ class Networking {
 
   // constructor used to setup websockets connection with server
   constructor() {
-    this.socket = new WebSocket(this.wsServer)
+    this.socket = new WebSocket(WS_SERVER)
     this.socket.onopen = (e) => {
       console.log("server connection opened");
       this.wsSend("get-id"); // request an id as soon as the connection opens

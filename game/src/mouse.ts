@@ -1,10 +1,13 @@
 
-export class Mouse{
+class Mouse{
     x: number = 0;
     y: number = 0;
     left: boolean = false;
+    hasLeft: boolean = false;
     right: boolean = false;
+    hasRight: boolean = false;
     middle: boolean = false;
+    hasMiddle: boolean = false;
 
 	constructor(){ // canvas: HTMLCanvasElement
 
@@ -18,12 +21,15 @@ export class Mouse{
             switch(event.button){
                 case 0:
                     this.left = true;
-                    break; // what is this? pascal?
+                    this.hasLeft = true;
+                    break;
                 case 1:
                     this.middle = true;
+                    this.hasMiddle = true;
                     break;
                 case 2:
                     this.right = true;
+                    this.hasRight = true;
             }
             console.log(this)
 		});
@@ -40,4 +46,15 @@ export class Mouse{
             }
 		});
 	}
+
+    // wether the button has been clicked since last call to this
+    hasClicked(which: "left" | "middle" | "right"): boolean {
+        if(this[which]){
+            this[which] = false;
+            return true
+        }
+        return false
+    }
 }
+
+export const mouse = new Mouse();

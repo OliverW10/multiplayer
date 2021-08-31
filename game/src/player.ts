@@ -1,8 +1,7 @@
 
 import { World } from "./host.js";
-import { Keyboard } from "./keyboard.js";
-import { Mouse } from "./mouse.js"
-import { getLineRect, Rect, Vector2 } from "./utils.js";
+import { playerInputMessage } from "./networking.js";
+import { getLineRect, Rect, round, showText, Vector2 } from "./utils.js";
 
 export interface playerData{
     x: number;
@@ -11,6 +10,8 @@ export interface playerData{
     speed: number;
     id: number;
     swingPos?: Vector2; // if its not there their not holding anything
+    lookAngle: number;
+    ping: number;
   }
 
 export class Player {
@@ -38,11 +39,19 @@ export class Player {
     recentlySwung: Array<{ p: Vector2; t: number; }> = [];
     swingDist = 0;
     swinging = false;
-    wasSwinging = false;
+    wasSwinging = false; // was swinging last frame
+    wasNetSwinging = false; // was swinging last network tick
 
     SWING_COOLDOWN = 1.5;
 
     bulletPos?: Vector2; // since each player can have max 1 bullet it dosent make sense to have a seperate class
+    // if bulletPos is undefined there is no bullet
+    bulletVel = new Vector2(0, 0);
+    bulletAge = 0;
+
+    lookAngle = 0;
+
+    ping = 0; // used by host only
 
     constructor(id: number) {
         this.id = id;
@@ -64,12 +73,7 @@ export class Player {
         return p
     }
 
-    // static drawPlayer(x: number, y: number, angle: number){
-    //     // takes in pixel cordinates
-        
-    // }
-
-    render(canvas: HTMLCanvasElement, camera: Rect) { 
+    render(camera: Rect) { 
         const drawPos = this.pos.worldToPixel(camera, canvas)
         if(this.swinging){
             const swingDrawPos = this.swingPos.worldToPixel(camera, canvas);
@@ -80,15 +84,33 @@ export class Player {
             ctx.lineTo(swingDrawPos.x, swingDrawPos.y);
             ctx.stroke();
         }
+
+        // body cirlce
         ctx.beginPath();
         ctx.strokeStyle = "gray";
         ctx.lineWidth = 6;
         ctx.arc(drawPos.x, drawPos.y, 20, 0, Math.PI * 2);
         ctx.stroke();
+
+        // turret
         ctx.beginPath();
+        ctx.strokeStyle = "blue";
+        ctx.lineWidth = 10;
+        ctx.beginPath();
+        ctx.moveTo(drawPos.x, drawPos.y);
+        ctx.lineTo(drawPos.x+Math.cos(this.lookAngle)*40, drawPos.y+Math.sin(this.lookAngle)*40);
+        ctx.stroke()
+
+        // body direction indicator
+        ctx.beginPath();
+        ctx.strokeStyle = "grey"
+        ctx.lineWidth = 6;
         ctx.moveTo(drawPos.x, drawPos.y);
         ctx.lineTo(drawPos.x+Math.cos(this.angle)*30, drawPos.y+Math.sin(this.angle)*30);
         ctx.stroke()
+
+        // ping
+        showText(ctx, `id: ${this.id}  ${round(this.ping, 2)}ms`, drawPos.x, drawPos.y-30, 10);
     }
     update(dt: number, map: World) {
         this.lastPos = new Vector2(this.pos.x, this.pos.y);
@@ -114,15 +136,11 @@ export class Player {
             this.angle = Math.atan2(displacment.y, displacment.x);
             // actuall move player
             this.pos = this.swingPos.plus(clampPos);
-            // this.pos.y = displacment.y;
             this.wasSwinging = true;
-        }else{
-            if(this.wasSwinging === true){
-                this.recentlySwung.push({p: this.swingPos, t:this.SWING_COOLDOWN});
-            }
+        }else{ // not swinging
 
-            for(let pos of this.recentlySwung){pos.t -= dts;} // decriment timer
-            this.recentlySwung = this.recentlySwung.filter(x=>x.t>0) // remove old ones
+            for(let pos of this.recentlySwung){pos.t -= dts;} // decriment swung timer
+            this.recentlySwung = this.recentlySwung.filter(x=>x.t>0) // remove old swung poss
             
             this.speed += this.inputY * dts * this.ACCEL;
             this.angle += this.inputX * dts * this.TURN;
@@ -134,6 +152,7 @@ export class Player {
             this.wasSwinging = false;
         }
 
+        /////////// COLLISION //////////
         let ofInterest = []; // lines who we are in the box collider of
         // for every line
         for(let line of map){
@@ -172,8 +191,6 @@ export class Player {
             }
         }
 
-
-
         // this.x = (this.targetX + this.x)/2; // smoothing because position from networking may be jerky
         // this.y = (this.targetY + this.y)/2; 
     }
@@ -184,12 +201,20 @@ export class Player {
             this.pos.y = player.y;
             this.speed = player.speed;
             this.angle = player.angle;
+            this.lookAngle = player.lookAngle;
+            this.ping = player.ping
             if(player.swingPos){
                 this.swingPos = new Vector2(player.swingPos.x, player.swingPos.y);
                 this.swinging = true;
                 this.swingDist = this.pos.distanceTo(this.swingPos);
+                this.wasNetSwinging = true;
             }else{
+                if(this.wasNetSwinging){ // just stopped swinging
+                    console.log("added to recently swung")
+                    this.recentlySwung.push({p: this.swingPos, t:this.SWING_COOLDOWN});
+                }
                 this.swinging = false;
+                this.wasNetSwinging = false;
             }
         }
     }
@@ -210,6 +235,8 @@ export class Player {
             y: this.pos.y,
             angle: this.angle,
             speed: this.speed,
+            lookAngle: this.lookAngle,
+            ping: this.ping
         }
         if(this.swinging){
             temp["swingPos"] = this.swingPos;
@@ -217,11 +244,53 @@ export class Player {
         return temp;
     }
 
-    // grab(pos: Vector2){
-    //     this.swingPos = pos;
-    //     this.swinging = true;
-    // }
-    // ungrab(){
-    //     this.swinging = false;
-    // }
+    setLookAngle(angle: number): void{
+        this.lookAngle = angle;
+    }
+
+    // host takes client input
+    takeInput(msg: playerInputMessage, map: World){
+        this.inputX = msg.data.inputX;
+        this.inputY = msg.data.inputY;
+        this.lookAngle = msg.data.lookAngle;
+        if(msg.data.swinging){ 
+            if(!this.swinging){ // only if werent swinging last frame
+                console.log("set swinging")
+                const closest = this.findClosestHandle(map)
+                this.swingPos = closest.pos;
+                this.swingDist = closest.dist;
+                this.swinging = true;
+            }
+        }else{
+            if(this.swinging){
+                this.recentlySwung.push({p: this.swingPos, t:this.SWING_COOLDOWN});
+            }
+            this.swinging = false;
+        }
+        if(msg.data.shooting){
+            
+        }
+    }
+
+    findClosestHandle(map: World): {pos:Vector2, dist:number}{
+        let minDist = 9999;
+        let minPos = new Vector2(0, 0)
+        for(let line of map){
+            const dist1 = (line.p1.x-this.pos.x)**2 + (line.p1.y-this.pos.y)**2;
+            if(dist1 < minDist){
+                if(!this.recentlySwung.some((x)=>x.p.equals(line.p1))){
+                    minDist = dist1;
+                    minPos = line.p1;
+                }
+            }
+            const dist2 = (line.p2.x-this.pos.x)**2 + (line.p2.y-this.pos.y)**2;
+            if(dist2 < minDist){
+                if(!this.recentlySwung.some((x)=>x.p.equals(line.p2))){
+                    minDist = dist2;
+                    minPos = line.p2;
+                }
+            }
+        }
+        return {pos:minPos, dist:Math.sqrt(minDist)};
+    }
 }

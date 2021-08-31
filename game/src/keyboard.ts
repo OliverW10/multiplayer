@@ -1,5 +1,5 @@
 
-export class Keyboard{
+class Keyboard{
     /*
     The keys system currently works by adding any key pressed into the keys object
     the key is the key name and the value is a bool of if it is pressed
@@ -27,4 +27,4 @@ export class Keyboard{
     }
 }
 
-
+export const keyboard = new Keyboard();

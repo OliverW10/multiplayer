@@ -1,4 +1,5 @@
 
+// defined in here so they are global
 
 const canvas:HTMLCanvasElement = document.createElement("canvas")
 // prevent dragging and right click
