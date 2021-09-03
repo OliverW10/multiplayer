@@ -1,10 +1,12 @@
-import { Player } from "./player.js"
-import { mouse } from "./mouse.js";
-import { keyboard } from "./keyboard.js"
-import { networking, peerInterface, playerInputMessage } from "./networking.js"
-import { showText, Vector2, Rect, round, getLineRect } from "./utils.js"
-import { GameHost } from "./host.js";
-
+import { Player } from "./player"
+import { mouse } from "./mouse";
+import { keyboard } from "./keyboard"
+import { networking, peerInterface, playerInputMessage } from "./networking"
+import { showText, Vector2, Rect, round, getLineRect } from "./utils"
+import { GameHost } from "./host";
+import { Explosion } from "./particle";
+import { generateMap } from "./world";
+import { ctx, canvas } from "./index";
 
 
 // Handles rendering, player input, movement prediction
@@ -28,10 +30,19 @@ export class Game {
     shooting = false;
     detonating = false;
     us: Player | void | undefined;
-    joiningInterval: number = 0;
+    explosions: Array<Explosion> = [];
+    createExplosion: (pos: Vector2)=>void;
 
     constructor() {
         this.players = [];
+
+        this.createExplosion = (pos: Vector2)=>{
+            console.log("called create explosion")
+            for(let p of game.players){
+                p.impulseFrom(pos, 0.04)
+            }
+            game.explosions.push(new Explosion(pos, 0.04))
+        }
     }
 
     public static onPeerMsg(message: peerInterface): void {
@@ -39,7 +50,8 @@ export class Game {
         // console.log(message)
         switch (message.type) {
             case "world-data":
-                for (let lineRaw of message.data) {
+                const mapData = generateMap(message.data)
+                for (let lineRaw of mapData) {
                     let line = { p1: new Vector2(lineRaw.p1.x, lineRaw.p1.y), p2: new Vector2(lineRaw.p2.x, lineRaw.p2.y) };
                     if (!game.map.some(x => { x == line })) { // if we dont already have it
                         game.map.push(line)
@@ -56,8 +68,8 @@ export class Game {
                         const idx = curIds.indexOf(player.id)
                         game.players[idx].networkUpdate(player)
                     } else {
-                        console.log(`created new player ${player.id}`)
-                        game.players.push(Player.fromPlayerData(player))
+                        console.log(`created new player ${player.id}`) 
+                        game.players.push(Player.fromPlayerData(player, game.createExplosion))
                         curIds = game.players.map(x => x.id)
                     }
                 }
@@ -160,10 +172,12 @@ export class Game {
             ) { // only run for lines within view + viewMargin
                 const colBox = getLineRect(line);
                 ctx.beginPath();
-                if(colBox.checkPos(this.getOurPlayer()!.pos)){
-                    ctx.fillStyle = "rgba(100, 100, 100, 0.5)";
-                }else{
-                    ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
+                if(this.us){
+                    if(colBox.checkPos(this.us.pos)){
+                        ctx.fillStyle = "rgba(100, 100, 100, 0.5)";
+                    }else{
+                        ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
+                    }
                 }
                 const rectPix = colBox.worldToPixel(this.viewPos, canvas);
                 ctx.rect(rectPix.x, rectPix.y, rectPix.w, rectPix.h);
@@ -189,6 +203,10 @@ export class Game {
                     }
                 }
             }
+        }
+
+        for(let explo of this.explosions){
+            explo.render(this.viewPos)
         }
 
         if(this.us && this.closesntHandleDist < 998){
@@ -268,8 +286,9 @@ export class Game {
         }else{
             this.grabbing = false;
         }
-
-        this.shooting = mouse.hasClicked("left");
+        if(mouse.hasClicked("left")){
+            this.shooting = true;
+        }
         this.detonating = mouse.right;
 
         this.lastTickTime += dt;
@@ -277,12 +296,18 @@ export class Game {
         const us = this.getOurPlayer();
         if(us){
             const viewTarget = new Vector2(us.pos.x, us.pos.y)
-            this.viewPos.setMid(viewTarget.interpolate(this.viewPos.middle(), 1-(dts*5)))
+            // this.viewPos.setMid(this.viewPos.middle().interpolate(viewTarget, dts*5))
+            this.viewPos.setMid(viewTarget)
             const outDrawPos = us.pos.worldToPixel(this.viewPos, canvas);
             this.lookAngle = outDrawPos.angleTo( new Vector2(mouse.x, mouse.y));
             us.setLookAngle(this.lookAngle)
             us.takeInput(this.getInput(false), this.map) // only for local
         }
+
+        for(let explo of this.explosions){
+            explo.update(dts);
+        }
+        this.explosions = this.explosions.filter(x=>x.alive)
 
         this.frametimes.push(dt);
         if (this.frametimes.length > 10) {
@@ -299,7 +324,7 @@ export class Game {
             networking.joinGame(id);
             gamesListOuter!.style.transform = "translate(-50%, -200%)";
 
-            this.joiningInterval = setInterval(() => { this.sendInput() }, 1000/this.clientTickRate);
+            setInterval(() => { this.sendInput() }, 1000/this.clientTickRate);
             game.sendInput(); // send input back after the tick
         } else {
             console.log("game dosent exist")
@@ -314,6 +339,7 @@ export class Game {
             networking.rtcSendObj(this.getInput(), -2);
         } else {
             console.log("isnt ready")
+            console.log(networking.peers, networking.peers.map(x=>x.dataChannel.readyState))
         }
     }
 
@@ -338,6 +364,8 @@ export class Game {
         if(forSend){
             this.inputX = 0;
             this.inputY = 0;
+
+            this.shooting = false;
 
             this.lastTickTime = 0; // time since last getInput (dt added in update)
         }
@@ -368,6 +396,11 @@ if (gameButton) {
         gameButton!.innerHTML = x ? "toggle game visability [x]" : "toggle game visability [ ]";
     }
 } else { console.log("game button didnt exist") }
+
+const wsConneectingMsg = document.getElementById("connectingMsg");
+networking.onServerOpen = ()=>{
+    wsConneectingMsg!.style.display = "none";
+}
 
 function createGameList(list: Array<number>, ourId: number) {
     // first clear previouse list
@@ -425,7 +458,8 @@ function tick(nowish: number) { // local updates only
         if (!gameHost) {
             gameHost = new GameHost();
             game.map = gameHost.map;
-            gameHost.takePlayerInput(networking.id!, game.getInput()) // send input at start
+            // gameHost.takePlayerInput(networking.id!, game.getInput()) // send input at start
+            setInterval(() => { game.sendInput() }, 1000/game.clientTickRate);
         }
         // gameHost.tick() // gameHost sets it own interval for tick
 

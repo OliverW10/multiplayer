@@ -83,6 +83,10 @@ export class Vector2{
     equals(other: Vector2): boolean{
         return other.x===this.x && other.y===this.y;
     }
+    // to prevent shallow copying
+    copy(): Vector2{
+        return new Vector2(this.x, this.y)
+    }
 }
 
 export class Rect{
@@ -168,7 +172,7 @@ export function round(n: number, to=0){
     let power = 10**to;
     return Math.round(n*power)/power;
 }
-export function random(min: number, max: number): number{
+export function myRandom(min: number, max: number): number{
     return Math.random()*(max-min)+min;
 }
 

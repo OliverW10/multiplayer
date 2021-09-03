@@ -1,9 +1,7 @@
 const http = require("http");
 const ws = require("ws");
 
-const wsPort = 8080;
-
-// ========== WEB SOCKETS ==========
+const port = 8080;
 
 const wss = new ws.Server({ noServer: true });
 
@@ -13,7 +11,7 @@ function accept(req, res) {
     !req.headers.upgrade ||
     req.headers.upgrade.toLowerCase() != "websocket"
   ) {
-    res.end();
+    acceptHttp(res)
     return;
   }
 
@@ -28,6 +26,16 @@ function accept(req, res) {
     return;
   }
 
+  acceptWs(req)
+}
+
+function acceptHttp(res){
+  res.writeHead(200, {'Content-Type': 'text/plain'});
+  res.write('Hello World!');
+  res.end();
+}
+
+function acceptWs(req){
   wss.handleUpgrade(req, req.socket, Buffer.alloc(0), onConnect);
 }
 
@@ -156,8 +164,5 @@ function pruneClients() {
 
 setInterval(pruneClients, 5000);
 
-if (!module.parent) {
-  http.createServer(accept).listen(wsPort);
-} else {
-  exports.accept = accept;
-}
+http.createServer(accept).listen(port);
+

@@ -1,15 +1,15 @@
 // https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking
 // https://raymondgh.github.io/webrtc.html
 
-import { World } from "./host.js";
-import { playerData } from "./player.js";
+import { World } from "./world";
+import { playerData } from "./player";
 
 
 const WS_SERVER = "wss://multiplayer-backend.olikat.repl.co"
 
 interface mapMessage {
   type: "world-data";
-  data: World;
+  data: number; // seed
 }
 
 export interface playerStateMessage { // send from host to clients
@@ -127,6 +127,8 @@ class Peer {
         // console.log(event.data);
         this.onPeerMsg(JSON.parse(event.data), this.id)
       }
+    }else{
+      console.log("data channel didnt exist to set callbacks")
     }
   }
 
@@ -220,9 +222,12 @@ class Networking {
   peers: Array<Peer> = []; // a host peer will have every peer in the game but a client will only connect to the host
   id?: number;
   gamesList: Array<number> = [];
-  onGameList: (list: Array<number>) => void; // intended to be overridden
-  onPeerMsg: (message: peerInterface, id: number) => void = (x)=>{}; // ^
-  onNewPeer: (id: number)=>void = (x)=>{}; //              ^^
+
+  // intended to be overridden by parents
+  onGameList: (list: Array<number>) => void; 
+  onPeerMsg: (message: peerInterface, id: number) => void = (x)=>{};
+  onNewPeer: (id: number)=>void = (x)=>{};
+  onServerOpen: ()=>void = ()=>{};
   visable: boolean = false;
   hosting: boolean = false; // wether we are the host of the game
   connected: boolean = false; // in a game rn
@@ -232,6 +237,7 @@ class Networking {
     this.socket = new WebSocket(WS_SERVER)
     this.socket.onopen = (e) => {
       console.log("server connection opened");
+      this.onServerOpen();
       this.wsSend("get-id"); // request an id as soon as the connection opens
       setInterval(() => { this.wsSend("ping"); pingTime = performance.now()}, 2000) // ping server to keep connection alive and server know if client still there
     };
@@ -274,7 +280,7 @@ class Networking {
     };
     this.socket.onerror = function (error) {
       console.log(`websocket error: ${error}`)
-      alert(`[WS error] ${error}`);
+      alert(`Server is starting up, please try again in a few seconds. ${error}`);
     };
 
     this.onGameList = () => { }; // just a placeholder, real callback is passed in call to this.getGames

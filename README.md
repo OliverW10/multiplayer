@@ -2,8 +2,8 @@
 Peer to peer multiplayer game using webRTC
 
 
-game/ `tsc -w`
+game/ `parcel watch src/index.html --public-url ./`
 
-game/public `python server.py`
+game/ `http-server dist`
 
 backend/ `nodemon index.js`

@@ -1,4 +1,6 @@
-import { Colour, random, Rect, Vector2 } from "./utils";
+import { Colour, myRandom, Rect, round, Vector2 } from "./utils";
+import { ctx, canvas } from "./index";
+
 
 // meant to be controlled by particle group
 class Particle{
@@ -48,7 +50,7 @@ class ParticleGroup{
         this.lifetime = lifetime;
         this.particles = [];
         for(let i = 0; i < amount; i++){
-            this.particles.push( new Particle(pos, random(0, Math.PI*2), random(minSpeed, maxSpeed), size))
+            this.particles.push( new Particle(pos, myRandom(0, Math.PI*2), myRandom(minSpeed, maxSpeed), size))
         }
     }
     update(dt: number){
@@ -72,11 +74,39 @@ class ParticleGroup{
     }
 }
 
-class ParticleSystem{
-    // group of particle groups
-    particleGroups: Array<ParticleGroup> = [];
+class ParticleManager{
+    groups: Array<ParticleGroup> = []
+
+    constructor(){
+
+    }
 }
 
-class ParticleManager{
-
+export class Explosion{ // TODO: make extend particle group
+    pos: Vector2;
+    age: number = 0;
+    MAX_AGE: number = 0.3;
+    size: number;
+    alive: boolean = true;
+    constructor(pos: Vector2, size: number){
+        this.pos = pos;
+        this.size = size
+    }
+    render(view: Rect){
+        const drawPos = this.pos.worldToPixel(view, canvas)
+        const worldSize = (this.age/this.MAX_AGE) * this.size
+        const outerDrawPos = this.pos.plus(new Vector2(worldSize, 0)).worldToPixel(view, canvas)
+        const pixelSize = drawPos.distanceTo(outerDrawPos)
+        ctx.beginPath();
+        ctx.strokeStyle = `rgb(${round(255*this.age/this.MAX_AGE)}, 0, 50)`;
+        ctx.lineWidth = 3;
+        ctx.arc(drawPos.x, drawPos.y, pixelSize, 0, Math.PI*2);
+        ctx.stroke()
+    }
+    update(dts: number){
+        this.age += dts;
+        if(this.age > this.MAX_AGE){
+            this.alive = false;
+        }
+    }
 }

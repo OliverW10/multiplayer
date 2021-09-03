@@ -1,3 +1,7 @@
 node_modules/
 build/
 game/public/*.js
+.cache/
+dist/
+.public/
+.parcel-cache/

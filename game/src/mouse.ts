@@ -1,3 +1,4 @@
+import { canvas } from "./index";
 
 class Mouse{
     x: number = 0;

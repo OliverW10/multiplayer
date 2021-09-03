@@ -1,7 +1,9 @@
 
-import { World } from "./host.js";
-import { playerInputMessage } from "./networking.js";
-import { getLineRect, Rect, round, showText, Vector2 } from "./utils.js";
+import { checkCollisions, World } from "./world";
+import { playerInputMessage } from "./networking";
+import { clamp, Rect, round, scaleNumber, showText, Vector2 } from "./utils";
+import { ctx, canvas } from "./index";
+
 
 export interface playerData{
     x: number;
@@ -12,6 +14,9 @@ export interface playerData{
     swingPos?: Vector2; // if its not there their not holding anything
     lookAngle: number;
     ping: number;
+    bulletPos?: Vector2;
+    bulletAngle?: number;
+    bulletAge?: number;
   }
 
 export class Player {
@@ -29,11 +34,13 @@ export class Player {
     inputX = 0; // input x is rotational input
     inputY = 0; // input y is speed input
 
-    TURN = 1; // multipliers for speed
+    TURN = 0.8; // multipliers for speed
     ACCEL = 0.015;
     SWING_ACCEL = 0.01;
     SWING_TURN = 0.0;
     MAX_SPEED = 5;
+    DRAG = 0.12;
+    WALL_BOUNCE = 0.6;
 
     swingPos = new Vector2(0, 0);
     recentlySwung: Array<{ p: Vector2; t: number; }> = [];
@@ -44,30 +51,38 @@ export class Player {
 
     SWING_COOLDOWN = 1.5;
 
-    bulletPos?: Vector2; // since each player can have max 1 bullet it dosent make sense to have a seperate class
-    // if bulletPos is undefined there is no bullet
-    bulletVel = new Vector2(0, 0);
-    bulletAge = 0;
+    bulletPos: Vector2 = new Vector2(0, 0); // since each player can have max 1 bullet it dosent make sense to have a seperate class
+    bulletAngle: number = 0;
+    bulletAge: number = 0;
+    bulletAlive: boolean = false;
+    BULLET_SPEED = 0.1; // map widths per second
+    BULLET_LIFETIME = 3; // seconds
+    lastBulletPos: Vector2 = new Vector2(0, 0)
+    onCreateExplosion: (pos: Vector2) => void = (_)=>{};
 
     lookAngle = 0;
+    health = 100;
 
     ping = 0; // used by host only
 
-    constructor(id: number) {
+    constructor(id: number, createBullet: (pos: Vector2)=>void) {
         this.id = id;
+        if(createBullet){
+            this.onCreateExplosion = createBullet;
+        }
     }
 
 
-    public static fromPlayerData(data: playerData){
+    public static fromPlayerData(data: playerData, createBullet: (pos: Vector2)=>void){
         if('id' in data){
-            return Object.assign(new Player(data.id), data);
+            return Object.assign(new Player(data.id, createBullet), data);
         }else{
             throw "tried to create a player without id"
         }
     }
 
-    public static newRandom(id: number): Player{
-        let p = new Player(id)
+    public static newRandom(id: number, createBullet: (pos: Vector2)=>void): Player{
+        let p = new Player(id, createBullet)
         p.pos.x = Math.random();
         p.pos.y = Math.random();
         return p
@@ -93,13 +108,13 @@ export class Player {
         ctx.stroke();
 
         // turret
-        ctx.beginPath();
-        ctx.strokeStyle = "blue";
-        ctx.lineWidth = 10;
-        ctx.beginPath();
-        ctx.moveTo(drawPos.x, drawPos.y);
-        ctx.lineTo(drawPos.x+Math.cos(this.lookAngle)*40, drawPos.y+Math.sin(this.lookAngle)*40);
-        ctx.stroke()
+        // ctx.beginPath();
+        // ctx.strokeStyle = "blue";
+        // ctx.lineWidth = 10;
+        // ctx.beginPath();
+        // ctx.moveTo(drawPos.x, drawPos.y);
+        // ctx.lineTo(drawPos.x+Math.cos(this.lookAngle)*40, drawPos.y+Math.sin(this.lookAngle)*40);
+        // ctx.stroke()
 
         // body direction indicator
         ctx.beginPath();
@@ -108,6 +123,15 @@ export class Player {
         ctx.moveTo(drawPos.x, drawPos.y);
         ctx.lineTo(drawPos.x+Math.cos(this.angle)*30, drawPos.y+Math.sin(this.angle)*30);
         ctx.stroke()
+
+        // bullet
+        if(this.bulletAlive){
+            const bulletDrawPos = this.bulletPos.worldToPixel(camera, canvas);
+            ctx.beginPath();
+            ctx.fillStyle = "black";
+            ctx.arc(bulletDrawPos.x, bulletDrawPos.y, 10, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
         // ping
         showText(ctx, `id: ${this.id}  ${round(this.ping, 2)}ms`, drawPos.x, drawPos.y-30, 10);
@@ -145,7 +169,7 @@ export class Player {
             this.speed += this.inputY * dts * this.ACCEL;
             this.angle += this.inputX * dts * this.TURN;
 
-            this.speed *= 1-(0.1*dts)
+            this.speed *= 1-(this.DRAG*dts)
 
             this.pos.x += dts * Math.cos(this.angle) * this.speed;
             this.pos.y += dts * Math.sin(this.angle) * this.speed;
@@ -153,42 +177,38 @@ export class Player {
         }
 
         /////////// COLLISION //////////
-        let ofInterest = []; // lines who we are in the box collider of
-        // for every line
-        for(let line of map){
-            // do box check
-            const lineBox = getLineRect(line);
-            if(lineBox.checkPos(this.pos)){
-                ofInterest.push(line);
-            }
+        const colLine = checkCollisions(map, this.pos, this.lastPos)
+        if(colLine){
+            this.pos = this.lastPos;
+            this.speed *= this.WALL_BOUNCE;
+
+            const lineAngle = colLine.p1.angleTo(colLine.p2)
+            // find angles from line.p1 to us relative to line
+            const curAngle = colLine.p1.angleTo(this.pos) - lineAngle
+
+            const normal = lineAngle - (Math.sign(curAngle)*Math.PI/2) // line angle +- half pi
+            const angleToNormal = normal-(this.angle-Math.PI);
+            console.log(this.angle, normal)
+            this.angle = normal + angleToNormal;
+            console.log("hit line")
         }
 
-        // checks if your angle from one end of the line has crossed over 0 since the last update
-        for(let line of ofInterest){
-            const lineAngle = line.p1.angleTo(line.p2)
-
-            // find angles from line.p1 to us relative to line
-            const curAngle = line.p1.angleTo(this.pos) - lineAngle
-            const lastAngle = line.p1.angleTo(this.lastPos) - lineAngle
-
-            if(Math.sign(curAngle) !== Math.sign(lastAngle)){ // flipped sides of the line
-                if(Math.abs(curAngle) < 0.2){ // to prevent collisions on back side of line (where angles would be ~pi)
-                    if(line.p1.distanceTo(line.p2) > line.p1.distanceTo(this.pos)){ // prevent collisions on far end of line
-                        this.pos = this.lastPos;
-                        this.speed *= 0.9;
-                        const wrap = (x: number) => {return x%Math.PI*2};
-                        const normal = lineAngle - (Math.sign(curAngle)*Math.PI/2) // line angle +- half pi
-                        const angleToNormal = normal-(this.angle-Math.PI);
-                        console.log(this.angle, normal)
-                        this.angle = normal + angleToNormal;
-                        console.log("hit line")
-                    }else{
-                        console.log("passed line far")
-                    }
-                }else{
-                    console.log("passed line close")
-                }
+        //////////// BULLET /////////////////
+        if(this.bulletAlive){
+            this.bulletPos.x += Math.cos(this.bulletAngle) * this.BULLET_SPEED * dts;
+            this.bulletPos.y += Math.sin(this.bulletAngle) * this.BULLET_SPEED * dts;
+            this.bulletAge += dts;
+            if(this.bulletAge > this.BULLET_LIFETIME){
+                this.bulletAlive = false;
             }
+        
+            const bulletColLine = checkCollisions(map, this.bulletPos, this.lastBulletPos)
+            if(bulletColLine){
+                this.bulletAlive = false;
+                this.onCreateExplosion(this.bulletPos)
+            }
+
+            this.lastBulletPos = this.bulletPos.copy()
         }
 
         // this.x = (this.targetX + this.x)/2; // smoothing because position from networking may be jerky
@@ -216,6 +236,17 @@ export class Player {
                 this.swinging = false;
                 this.wasNetSwinging = false;
             }
+            if(player.bulletPos && player.bulletAngle && player.bulletAge){
+                [this.bulletPos.x, this.bulletPos.y] = [player.bulletPos.x, player.bulletPos.y];
+                this.bulletAngle = player.bulletAngle;
+                this.bulletAge = player.bulletAge;
+                this.bulletAlive = true;
+            }else{
+                if(this.bulletAlive){
+                    this.bulletAlive = false;
+                    this.onCreateExplosion(this.bulletPos)
+                }
+            }
         }
     }
     // controlUpdate(dt: number, keyboard: Keyboard, mouse: Mouse) {
@@ -241,6 +272,11 @@ export class Player {
         if(this.swinging){
             temp["swingPos"] = this.swingPos;
         }
+        if(this.bulletAlive){
+            temp["bulletAge"] = this.bulletAge;
+            temp["bulletAngle"] = this.bulletAngle;
+            temp["bulletPos"] = this.bulletPos;
+        }
         return temp;
     }
 
@@ -250,8 +286,8 @@ export class Player {
 
     // host takes client input
     takeInput(msg: playerInputMessage, map: World){
-        this.inputX = msg.data.inputX;
-        this.inputY = msg.data.inputY;
+        this.inputX = clamp(msg.data.inputX, -1, 1);
+        this.inputY = clamp(msg.data.inputY, -1, 1);
         this.lookAngle = msg.data.lookAngle;
         if(msg.data.swinging){ 
             if(!this.swinging){ // only if werent swinging last frame
@@ -268,7 +304,18 @@ export class Player {
             this.swinging = false;
         }
         if(msg.data.shooting){
-            
+            if(this.bulletAlive === false){
+                this.bulletAlive = true;
+                this.bulletPos = this.pos.copy();
+                this.bulletAge = 0;
+                this.bulletAngle = this.angle; // this.lookAngle
+            }
+        }
+        if(msg.data.detonating){
+            if(this.bulletAlive){
+                this.bulletAlive = false;
+                this.onCreateExplosion(this.bulletPos)
+            }
         }
     }
 
@@ -292,5 +339,25 @@ export class Player {
             }
         }
         return {pos:minPos, dist:Math.sqrt(minDist)};
+    }
+
+    /**
+     * 
+     * @param pos 
+     * @param size size of impulse 
+     * @param speed speed per seoncd to give if at pos, linearly goes to zero at size distance
+     * @param dmg damage to inflict if at pos, ^
+     */
+    impulseFrom(pos: Vector2, size: number, speed: number = 0.1, dmg=100){
+        const fakeDt = 0.00001;
+        const diff = pos.minus(this.pos); // vector to get from player to pos
+        const dist = scaleNumber(diff.length(), 0, size, 1, 0);
+        if(diff.length() < size){
+            let newPos = this.pos.plus( diff.normalize().times( (-1) * dist * speed) ) // move player away from pos by dist * speed
+            newPos = newPos.plus(new Vector2(Math.cos(this.angle) * this.speed, Math.sin(this.angle) * this.speed)) // move player as noramlly
+            // work out new angle and speed
+            this.angle = this.pos.angleTo(newPos);
+            this.speed = this.pos.distanceTo(newPos);
+        }
     }
 }

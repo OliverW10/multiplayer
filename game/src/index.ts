@@ -1,7 +1,7 @@
 
 // defined in here so they are global
 
-const canvas:HTMLCanvasElement = document.createElement("canvas")
+export const canvas:HTMLCanvasElement = document.createElement("canvas")
 // prevent dragging and right click
 canvas.setAttribute('draggable', "false");
 document.addEventListener('contextmenu', event => event.preventDefault());
@@ -15,4 +15,4 @@ setCanvasSize();
 window.onresize = setCanvasSize;
 
 document.body.appendChild(canvas);
-const ctx: CanvasRenderingContext2D = canvas.getContext("2d") as CanvasRenderingContext2D;
+export const ctx: CanvasRenderingContext2D = canvas.getContext("2d") as CanvasRenderingContext2D;
