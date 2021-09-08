@@ -2138,8 +2138,8 @@ exports.constants = {
 };
 
 },{"randombytes":"3cRW3","create-hash":"d4N0y","create-hmac":"g9iCi","browserify-sign/algos":"4drwk","pbkdf2":"3Yjkw","browserify-cipher":"9V2K9","diffie-hellman":"a4ccK","browserify-sign":"dK7AH","create-ecdh":"hV7Lh","public-encrypt":"atHIx","randomfill":"Y05bB"}],"3cRW3":[function(require,module,exports) {
-var process = require("process");
 var global = arguments[3];
+var process = require("process");
 'use strict';
 // limit of Crypto.getRandomValues()
 // https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues
@@ -5830,8 +5830,8 @@ Object.defineProperty(Duplex.prototype, 'destroyed', {
 });
 
 },{"process":"41iPy","./_stream_readable":"9cK50","./_stream_writable":"7HBJH","inherits":"iuCHA"}],"7HBJH":[function(require,module,exports) {
-var global = arguments[3];
 var process = require("process");
+var global = arguments[3];
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -8592,8 +8592,8 @@ exports.finished = require('./lib/internal/streams/end-of-stream.js');
 exports.pipeline = require('./lib/internal/streams/pipeline.js');
 
 },{"./lib/_stream_readable.js":"c7aaL","./lib/_stream_writable.js":"HNUwC","./lib/_stream_duplex.js":"hvWZ9","./lib/_stream_transform.js":"deoHA","./lib/_stream_passthrough.js":"jFaz4","./lib/internal/streams/end-of-stream.js":"3aItU","./lib/internal/streams/pipeline.js":"6IT4y"}],"c7aaL":[function(require,module,exports) {
-var global = arguments[3];
 var process = require("process");
+var global = arguments[3];
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -11602,8 +11602,8 @@ module.exports = function(iterations, keylen) {
 };
 
 },{}],"aSlnk":[function(require,module,exports) {
-var process = require("process");
 var global = arguments[3];
+var process = require("process");
 var defaultEncoding;
 /* istanbul ignore next */ if (global.process && global.process.browser) defaultEncoding = 'utf-8';
 else if (global.process && global.process.version) {
@@ -19696,8 +19696,8 @@ exports.finished = require('./lib/internal/streams/end-of-stream.js');
 exports.pipeline = require('./lib/internal/streams/pipeline.js');
 
 },{"./lib/_stream_readable.js":"dS73y","./lib/_stream_writable.js":"hEPgN","./lib/_stream_duplex.js":"8NBLT","./lib/_stream_transform.js":"4YbNH","./lib/_stream_passthrough.js":"lG80A","./lib/internal/streams/end-of-stream.js":"ch4xH","./lib/internal/streams/pipeline.js":"9D4Nc"}],"dS73y":[function(require,module,exports) {
-var process = require("process");
 var global = arguments[3];
+var process = require("process");
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -42722,8 +42722,8 @@ function compare(a, b) {
 }
 
 },{"parse-asn1":"5lKqM","./mgf":"jgdHM","./xor":"882AH","bn.js":"f07zZ","browserify-rsa":"7Os23","create-hash":"d4N0y","./withPublic":"1HNhl","safe-buffer":"frPmO"}],"Y05bB":[function(require,module,exports) {
-var global = arguments[3];
 var process = require("process");
+var global = arguments[3];
 'use strict';
 function oldBrowser() {
     throw new Error('secure random number generation not supported by this browser\nuse chrome, FireFox or Internet Explorer 11');
@@ -43078,11 +43078,18 @@ parcelHelpers.defineInteropFlag(exports);
 parcelHelpers.export(exports, "networking", ()=>networking
 );
 const WS_SERVER = "wss://multiplayer-backend.olikat.repl.co";
+var RTCconfig = {
+    iceServers: [
+        {
+            urls: "stun:stun.l.google.com:19302"
+        }
+    ]
+};
 class Peer {
     constructor(id1, localId, signaler, onPeerMsg, onNewPeerReady){
         this.ready // ready to send p2p messages
          = false;
-        this.peerConnection = new RTCPeerConnection();
+        this.peerConnection = new RTCPeerConnection(RTCconfig);
         this.id = id1;
         this.localId = localId;
         this.wsSender = signaler;
