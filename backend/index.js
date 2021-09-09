@@ -22,6 +22,7 @@ function accept(req, res) {
       req.headers.connection.match(/\bkeep-alive\b/i)
     )
   ) {
+    acceptHttp(res)
     res.end();
     return;
   }
@@ -31,7 +32,7 @@ function accept(req, res) {
 
 function acceptHttp(res){
   res.writeHead(200, {'Content-Type': 'text/plain'});
-  res.write('Hello World!');
+  res.write(`Connected: ${clients.length}`);
   res.end();
 }
 

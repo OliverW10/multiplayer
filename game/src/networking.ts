@@ -7,6 +7,11 @@ import { playerData } from "./player";
 
 const WS_SERVER = "wss://multiplayer-backend.olikat.repl.co"
 
+var RTCconfig = {
+  iceServers: [{urls: "stun:stun.l.google.com:19302"}]
+};
+
+
 interface mapMessage {
   type: "world-data";
   data: number; // seed
@@ -70,20 +75,12 @@ class Peer {
     onPeerMsg: (message: peerInterface, id: number) => void,
     onNewPeerReady: (id: number)=>void
   ) {
-    this.peerConnection = new RTCPeerConnection();
+    this.peerConnection = new RTCPeerConnection(RTCconfig);
     this.id = id;
     this.localId = localId;
     this.wsSender = signaler;
     this.onPeerMsg = onPeerMsg;
     this.onPeerReady = onNewPeerReady;
-
-    // first set callbacks for once data channel is open
-    // once data channel is created this is called
-    this.peerConnection.ondatachannel = event => {
-      this.dataChannel = event.channel;
-      console.log("on data channel called")
-      this.setDatachannelCallbacks()
-    }
 
     // triggered by setting local description
     // create and send ice candidate
@@ -105,6 +102,14 @@ class Peer {
         // no more candidates to send
         console.log("All ICE candidates sent!")
       }
+    }
+
+    // first set callbacks for once data channel is open
+    // once data channel is created this is called
+    this.peerConnection.ondatachannel = event => {
+      this.dataChannel = event.channel;
+      console.log("on data channel called")
+      this.setDatachannelCallbacks()
     }
   }
 
@@ -146,7 +151,7 @@ class Peer {
   }
 
   public createDataOffer() {
-    this.dataChannel = this.peerConnection.createDataChannel("myFirstDataChannel")
+    this.dataChannel = this.peerConnection.createDataChannel("CHANNEL_NAME")
     this.peerConnection.createOffer().then((OfferRTCSessionDescription) => {
       // peer1, the offerer, will set the offer to be its Local Description
       // setting Local Description triggers the peer1connection.onicecandidate event!!
@@ -203,9 +208,10 @@ class Peer {
 
     // add the ice candidate to the connection
     // will automatically call onicecandidate again if it dosent work
-    this.peerConnection!.addIceCandidate(candidate).then(() =>
-      // it worked!
-      console.log('Ice Candidate successfully added to peerconnection'),
+    this.peerConnection!.addIceCandidate(candidate).then(() =>{
+        // it worked!
+        console.log('Ice Candidate successfully added to peerconnection')
+      },
       // it didn't work!
       err => {
         console.log('PR 1: Oh no! We failed to add the candidate');
@@ -320,7 +326,7 @@ class Networking {
   // handles any WS messages with type 'rtc-signal'
   private signalHandler(signal: RTCSignal) {
 
-    let curRemote = this.remoteFromId(signal.src); // gets or creates remote with correct id
+    let curRemote = this.remoteFromId(signal.src); // gets or creates Peer with correct id
 
     console.log("handling signal")
     // call its handle function for this type of message
@@ -361,7 +367,7 @@ class Networking {
     if (!this.id) { console.log("tried to join a game before getting id"); return }
     this.hosting = false;
     this.visable = false;
-    let curRemote = this.remoteFromId(gameId); // likely creates a new peer
+    let curRemote = this.remoteFromId(gameId); //creates a new peer
     curRemote.createDataOffer()
   }
 

@@ -324,7 +324,11 @@ export class Game {
             networking.joinGame(id);
             gamesListOuter!.style.transform = "translate(-50%, -200%)";
 
-            setInterval(() => { this.sendInput() }, 1000/this.clientTickRate);
+            this.sendInput = this.sendInput.bind(this);
+            networking.setOnNewPeer(()=>{
+                console.log("set sendinput callback")
+                setInterval(this.sendInput, 1000/this.clientTickRate);
+            });
             game.sendInput(); // send input back after the tick
         } else {
             console.log("game dosent exist")
@@ -339,7 +343,7 @@ export class Game {
             networking.rtcSendObj(this.getInput(), -2);
         } else {
             console.log("isnt ready")
-            console.log(networking.peers, networking.peers.map(x=>x.dataChannel.readyState))
+            console.log(networking.peers, networking.peers.map(x=>`${x.peerConnection.connectionState}  ${x.peerConnection.iceConnectionState}`))
         }
     }
 

@@ -1,5 +1,4 @@
-import { MersenneTwister19937 } from "random-js";
-import { Random } from "random-js";
+import { Random, MersenneTwister19937 } from "random-js";
 import { getLineRect, Line, round, Vector2 } from "./utils";
 
 
