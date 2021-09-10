@@ -478,7 +478,7 @@ class Game {
         this.frametimes = [];
         this.players = [];
         this.map = [];
-        this.viewPos = new _utils.Rect(0, 0, 999, 0.2);
+        this.viewPos = new _utils.Rect(0, 0, 999, 0.25);
         this.VIEW_MARGIN // draw things up to 0.2 outside view to prevent popin 
          = 0.1;
         this.outerViewPos = new _utils.Rect(0, 0, 999, 0.3);
@@ -496,10 +496,12 @@ class Game {
         this.shooting = false;
         this.detonating = false;
         this.explosions = [];
+        this.VIEWPORT_LEAD = 0.7;
         this.players = [];
-        this.createExplosion = (pos)=>{
+        this.createExplosion = (pos, fromId)=>{
             console.log("called create explosion");
-            for (let p of game.players)p.impulseFrom(pos, 0.04);
+            for (let p of game.players)if (p.id === fromId) p.impulseFrom(pos, 0.04, 0.2, 50);
+            else p.impulseFrom(pos, 0.04, 0.1, 100);
             game.explosions.push(new _particle.Explosion(pos, 0.04));
         };
     }
@@ -546,15 +548,15 @@ class Game {
         ctx.arc(_mouse.mouse.x, _mouse.mouse.y, 10, 0, Math.PI * 2);
         ctx.fill();
         this.viewPos.w = this.viewPos.h * _index.canvas.width / _index.canvas.height;
-        // TODO: maybe dont need to call every frame
         this.outerViewPos = new _utils.Rect(this.viewPos.x - this.VIEW_MARGIN / 2, this.viewPos.y - this.VIEW_MARGIN / 2, this.viewPos.w + this.VIEW_MARGIN, this.viewPos.h + this.VIEW_MARGIN);
-        // same here
+        // probrobly dont need to call every frame
         this.us = this.getOurPlayer();
         if (this.players.length >= 1) {
             this.drawMap();
             this.drawMinimap();
             this.drawPlayers();
         }
+        if (this.us) _utils.showText(ctx, Math.round(this.us.speed * 1000) / 1000 + "/s", _index.canvas.width / 2, _index.canvas.height - 50, 30);
         _utils.showText(ctx, Math.round(this.framerate * 100) / 100 + "fps", 100, 50, 30);
     }
     drawMinimap() {
@@ -588,7 +590,7 @@ class Game {
             // render them on minimap
             _index.ctx.beginPath();
             _index.ctx.fillStyle = "rgba(255, 0, 0, 1)";
-            _index.ctx.rect(minimapRect.x + p.pos.x * minimapRect.w, minimapRect.y + p.pos.y * minimapRect.h, 10, 10);
+            _index.ctx.rect(minimapRect.x + p.pos.x * minimapRect.w - 3, minimapRect.y + p.pos.y * minimapRect.h - 3, 6, 6);
             _index.ctx.fill();
         }
         // border
@@ -606,16 +608,21 @@ class Game {
         // console.log(this.map)
         this.closesHandle = new _utils.Vector2(-1, -1);
         this.closesntHandleDist = 999;
-        for (let line of this.map)if (line.p1.x > this.outerViewPos.x && line.p1.x < this.outerViewPos.x + this.outerViewPos.w && line.p1.y > this.outerViewPos.y && line.p1.y < this.outerViewPos.y + this.outerViewPos.h || line.p2.x > this.outerViewPos.x && line.p2.x < this.outerViewPos.x + this.outerViewPos.w && line.p2.y > this.outerViewPos.y && line.p2.y < this.outerViewPos.y + this.outerViewPos.h) {
+        for (let line of this.map)if (line.p1.x > this.outerViewPos.x && line.p1.x < this.outerViewPos.x + this.outerViewPos.w && line.p1.y > this.outerViewPos.y && line.p1.y < this.outerViewPos.y + this.outerViewPos.h || line.p2.x > this.outerViewPos.x && line.p2.x < this.outerViewPos.x + this.outerViewPos.w && line.p2.y > this.outerViewPos.y && line.p2.y < this.outerViewPos.y + this.outerViewPos.h || Math.abs(line.p1.x - line.p2.x) > this.outerViewPos.w || Math.abs(line.p1.y - line.p2.y) > this.outerViewPos.y) {
             const colBox = _utils.getLineRect(line);
-            _index.ctx.beginPath();
-            if (this.us) {
-                if (colBox.checkPos(this.us.pos)) _index.ctx.fillStyle = "rgba(100, 100, 100, 0.5)";
-                else _index.ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
-            }
-            const rectPix = colBox.worldToPixel(this.viewPos, _index.canvas);
-            _index.ctx.rect(rectPix.x, rectPix.y, rectPix.w, rectPix.h);
-            _index.ctx.fill();
+            // debug hitboxes
+            // ctx.beginPath();
+            // if(this.us){
+            //     if(colBox.checkPos(this.us.pos)){
+            //         ctx.fillStyle = "rgba(100, 100, 100, 0.5)";
+            //     }else{
+            //         ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
+            //     }
+            // }
+            // const rectPix = colBox.worldToPixel(this.viewPos, canvas);
+            // ctx.rect(rectPix.x, rectPix.y, rectPix.w, rectPix.h);
+            // ctx.fill();
+            // actual line
             _index.ctx.beginPath();
             let start = line.p1.worldToPixel(this.viewPos, _index.canvas);
             _index.ctx.moveTo(start.x, start.y);
@@ -639,6 +646,7 @@ class Game {
             }
         }
         for (let explo of this.explosions)explo.render(this.viewPos);
+        // line showing potential handle
         if (this.us && this.closesntHandleDist < 998) {
             // draw handle effect
             _index.ctx.beginPath();
@@ -695,13 +703,14 @@ class Game {
         this.lastTickTime += dt;
         const us = this.getOurPlayer();
         if (us) {
-            const viewTarget = new _utils.Vector2(us.pos.x, us.pos.y);
-            // this.viewPos.setMid(this.viewPos.middle().interpolate(viewTarget, dts*5))
-            this.viewPos.setMid(viewTarget);
+            const viewTarget = new _utils.Vector2(us.pos.x + us.speed * Math.cos(us.angle) * this.VIEWPORT_LEAD, us.pos.y + us.speed * Math.sin(us.angle) * this.VIEWPORT_LEAD);
+            this.viewPos.h = _utils.scaleNumber(us.speed, 0, 0.1, 0.25, 0.35, true);
+            this.viewPos.setMid(this.viewPos.middle().interpolate(viewTarget, dts * 5));
+            // this.viewPos.setMid(viewTarget)
             const outDrawPos = us.pos.worldToPixel(this.viewPos, _index.canvas);
             this.lookAngle = outDrawPos.angleTo(new _utils.Vector2(_mouse.mouse.x, _mouse.mouse.y));
             us.setLookAngle(this.lookAngle);
-            us.takeInput(this.getInput(false), this.map) // only for local
+            us.takeInput(this.getInput(false), this.map, true) // only for local
             ;
         }
         for (let explo of this.explosions)explo.update(dts);
@@ -834,6 +843,7 @@ let lastTick = performance.now();
 function tick(nowish) {
     let delta = nowish - lastTick;
     lastTick = nowish;
+    delta = Math.min(delta, 1000); // cap delta time to stop weird things happening when you alt tab
     if (game.isHosting()) {
         if (!gameHost) {
             gameHost = new _host.GameHost();
@@ -841,9 +851,9 @@ function tick(nowish) {
             // gameHost.takePlayerInput(networking.id!, game.getInput()) // send input at start
             setInterval(()=>{
                 game.sendInput();
-            }, 1000 / game.clientTickRate);
+            }, 1000 / game.clientTickRate); // game on host machine sending input to gameHost
+            _networking.networking.setOnPeerLeave(gameHost.onPeerLeave);
         }
-        // gameHost.tick() // gameHost sets it own interval for tick
         gameHost.phyTick(delta);
         game.update(delta);
         game.render(_index.ctx);
@@ -900,16 +910,24 @@ class Player {
          = new _utils.Vector2(0, 0);
         this.bulletAngle = 0;
         this.bulletAge = 0;
-        this.bulletAlive = false;
+        this.bulletAlive // most recent state of bullet
+         = false;
+        this.netBulletAlive // state of bullet on host, 
+         = false;
         this.BULLET_SPEED // map widths per second
          = 0.1;
         this.BULLET_LIFETIME // seconds
-         = 3;
+         = 10;
         this.lastBulletPos = new _utils.Vector2(0, 0);
         this.onCreateExplosion = (_)=>{
         };
         this.lookAngle = 0;
         this.health = 100;
+        this.healthSmooth = 100;
+        this.damageTime // time since taken damage in seconds
+         = 0;
+        this.REGEN_COOLDOWN = 6;
+        this.REGEN_RATE = 15;
         this.ping // used by host only
          = 0;
         this.id = id1;
@@ -940,7 +958,7 @@ class Player {
         _index.ctx.beginPath();
         _index.ctx.strokeStyle = "gray";
         _index.ctx.lineWidth = 6;
-        _index.ctx.arc(drawPos.x, drawPos.y, 20, 0, Math.PI * 2);
+        _index.ctx.arc(drawPos.x, drawPos.y, 15, 0, Math.PI * 2);
         _index.ctx.stroke();
         // turret
         // ctx.beginPath();
@@ -955,7 +973,7 @@ class Player {
         _index.ctx.strokeStyle = "grey";
         _index.ctx.lineWidth = 6;
         _index.ctx.moveTo(drawPos.x, drawPos.y);
-        _index.ctx.lineTo(drawPos.x + Math.cos(this.angle) * 30, drawPos.y + Math.sin(this.angle) * 30);
+        _index.ctx.lineTo(drawPos.x + Math.cos(this.angle) * 20, drawPos.y + Math.sin(this.angle) * 20);
         _index.ctx.stroke();
         // bullet
         if (this.bulletAlive) {
@@ -964,7 +982,31 @@ class Player {
             _index.ctx.fillStyle = "black";
             _index.ctx.arc(bulletDrawPos.x, bulletDrawPos.y, 10, 0, Math.PI * 2);
             _index.ctx.fill();
+        } else {
+            _index.ctx.beginPath();
+            _index.ctx.fillStyle = "black";
+            _index.ctx.arc(drawPos.x, drawPos.y, 10, 0, Math.PI * 2);
+            _index.ctx.fill();
         }
+        // health bar
+        _index.ctx.beginPath(); // background
+        _index.ctx.strokeStyle = "rgba(100, 100, 100, 0.2)";
+        _index.ctx.lineWidth = 15;
+        _index.ctx.moveTo(drawPos.x - 50, drawPos.y + 30);
+        _index.ctx.lineTo(drawPos.x + 50, drawPos.y + 30);
+        _index.ctx.stroke();
+        _index.ctx.beginPath(); // green actual bar
+        _index.ctx.strokeStyle = "rgba(255, 10, 50, 0.7)";
+        _index.ctx.lineWidth = 15;
+        _index.ctx.moveTo(drawPos.x - 50, drawPos.y + 30);
+        _index.ctx.lineTo(drawPos.x - 50 + this.healthSmooth, drawPos.y + 30);
+        _index.ctx.stroke();
+        _index.ctx.beginPath(); // red follower
+        _index.ctx.strokeStyle = "rgba(10, 255, 50, 1)";
+        _index.ctx.lineWidth = 15;
+        _index.ctx.moveTo(drawPos.x - 50, drawPos.y + 30);
+        _index.ctx.lineTo(drawPos.x - 50 + this.health, drawPos.y + 30);
+        _index.ctx.stroke();
         // ping
         _utils.showText(_index.ctx, `id: ${this.id}  ${_utils.round(this.ping, 2)}ms`, drawPos.x, drawPos.y - 30, 10);
     }
@@ -995,8 +1037,13 @@ class Player {
             this.recentlySwung = this.recentlySwung.filter((x)=>x.t > 0
             ) // remove old swung poss
             ;
+            let turnBonus = 1;
+            if (this.inputY < 0) {
+                if (this.speed < 0) this.inputY /= 2;
+                else turnBonus = 1 + -this.inputY * 0.5; // 50% bonus turn speed when slowing down
+            }
             this.speed += this.inputY * dts * this.ACCEL;
-            this.angle += this.inputX * dts * this.TURN;
+            this.angle += this.inputX * dts * this.TURN * turnBonus;
             this.speed *= 1 - this.DRAG * dts;
             this.pos.x += dts * Math.cos(this.angle) * this.speed;
             this.pos.y += dts * Math.sin(this.angle) * this.speed;
@@ -1024,12 +1071,12 @@ class Player {
             this.bulletAge += dts;
             if (this.bulletAge > this.BULLET_LIFETIME) this.bulletAlive = false;
             const bulletColLine = _world.checkCollisions(map, this.bulletPos, this.lastBulletPos);
-            if (bulletColLine) {
-                this.bulletAlive = false;
-                this.onCreateExplosion(this.bulletPos);
-            }
+            if (bulletColLine) this.bulletAlive = false;
             this.lastBulletPos = this.bulletPos.copy();
         }
+        this.damageTime += dts;
+        if (this.damageTime > this.REGEN_COOLDOWN && this.health < 100) this.health = Math.min(100, this.health + this.REGEN_RATE * dts);
+        this.healthSmooth += this.healthSmooth > this.health ? -25 * dts : 25 * dts;
     // this.x = (this.targetX + this.x)/2; // smoothing because position from networking may be jerky
     // this.y = (this.targetY + this.y)/2; 
     }
@@ -1041,6 +1088,7 @@ class Player {
             this.angle = player.angle;
             this.lookAngle = player.lookAngle;
             this.ping = player.ping;
+            this.health = player.health;
             if (player.swingPos) {
                 this.swingPos = new _utils.Vector2(player.swingPos.x, player.swingPos.y);
                 this.swinging = true;
@@ -1065,9 +1113,11 @@ class Player {
                 this.bulletAngle = player.bulletAngle;
                 this.bulletAge = player.bulletAge;
                 this.bulletAlive = true;
-            } else if (this.bulletAlive) {
+                this.netBulletAlive = true;
+            } else if (this.netBulletAlive) {
                 this.bulletAlive = false;
-                this.onCreateExplosion(this.bulletPos);
+                this.netBulletAlive = false;
+                this.onCreateExplosion(this.bulletPos, this.id);
             }
         }
     }
@@ -1089,7 +1139,8 @@ class Player {
             angle: this.angle,
             speed: this.speed,
             lookAngle: this.lookAngle,
-            ping: this.ping
+            ping: this.ping,
+            health: Math.round(this.health)
         };
         if (this.swinging) temp["swingPos"] = this.swingPos;
         if (this.bulletAlive) {
@@ -1103,7 +1154,7 @@ class Player {
         this.lookAngle = angle;
     }
     // host takes client input
-    takeInput(msg, map) {
+    takeInput(msg, map, local = false) {
         this.inputX = _utils.clamp(msg.data.inputX, -1, 1);
         this.inputY = _utils.clamp(msg.data.inputY, -1, 1);
         this.lookAngle = msg.data.lookAngle;
@@ -1132,8 +1183,11 @@ class Player {
         }
         if (msg.data.detonating) {
             if (this.bulletAlive) {
-                this.bulletAlive = false;
-                this.onCreateExplosion(this.bulletPos);
+                if (!local) {
+                    this.bulletAlive = false;
+                    this.onCreateExplosion(this.bulletPos, this.id) // probrobly best to wait for comfirmation from server before showing effect
+                    ;
+                }
             }
         }
     }
@@ -1169,8 +1223,7 @@ class Player {
      * @param size size of impulse 
      * @param speed speed per seoncd to give if at pos, linearly goes to zero at size distance
      * @param dmg damage to inflict if at pos, ^
-     */ impulseFrom(pos, size, speed = 0.1, dmg = 100) {
-        const fakeDt = 0.00001;
+     */ impulseFrom(pos, size, speed, dmg) {
         const diff = pos.minus(this.pos); // vector to get from player to pos
         const dist = _utils.scaleNumber(diff.length(), 0, size, 1, 0);
         if (diff.length() < size) {
@@ -1181,6 +1234,9 @@ class Player {
             // work out new angle and speed
             this.angle = this.pos.angleTo(newPos);
             this.speed = this.pos.distanceTo(newPos);
+            this.health -= dist * dmg;
+            this.damageTime = 0;
+            if (this.health < 0) Object.assign(this, Player.newRandom(this.id, this.onCreateExplosion)); // overrides this with a new random player
         }
     }
 }
@@ -1229,7 +1285,7 @@ function checkParr(l1, l2) {
     return ang2 == ang1 || ang2 == ang1Inv;
 }
 const MAX_LINE_LENGTH = 5;
-function generateMap(seed, size = 15, density = 0.1) {
+function generateMap(seed, size = 15, density = 0.15) {
     let lines = [];
     console.log(`map seed ${seed}`);
     const random = new _randomJs.Random(_randomJs.MersenneTwister19937.seed(seed));
@@ -1249,6 +1305,23 @@ function generateMap(seed, size = 15, density = 0.1) {
             p2: new _utils.Vector2(x2 / size, y2 / size)
         });
     }
+    // create border lines
+    lines.push({
+        p1: new _utils.Vector2(0, 0),
+        p2: new _utils.Vector2(1, 0)
+    }); // top
+    lines.push({
+        p1: new _utils.Vector2(0, 1),
+        p2: new _utils.Vector2(1, 1)
+    }); // bottom
+    lines.push({
+        p1: new _utils.Vector2(1, 0),
+        p2: new _utils.Vector2(1, 1)
+    }); // right
+    lines.push({
+        p1: new _utils.Vector2(0, 0),
+        p2: new _utils.Vector2(0, 1)
+    }); // left
     // let newLines: Map = []
     // // check for long straight lines and combined
     // for(let line of lines){
@@ -8592,8 +8665,8 @@ exports.finished = require('./lib/internal/streams/end-of-stream.js');
 exports.pipeline = require('./lib/internal/streams/pipeline.js');
 
 },{"./lib/_stream_readable.js":"c7aaL","./lib/_stream_writable.js":"HNUwC","./lib/_stream_duplex.js":"hvWZ9","./lib/_stream_transform.js":"deoHA","./lib/_stream_passthrough.js":"jFaz4","./lib/internal/streams/end-of-stream.js":"3aItU","./lib/internal/streams/pipeline.js":"6IT4y"}],"c7aaL":[function(require,module,exports) {
-var process = require("process");
 var global = arguments[3];
+var process = require("process");
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -43086,7 +43159,7 @@ var RTCconfig = {
     ]
 };
 class Peer {
-    constructor(id1, localId, signaler, onPeerMsg, onNewPeerReady){
+    constructor(id1, localId, signaler, onPeerMsg, onNewPeerReady, onPeerLeave){
         this.ready // ready to send p2p messages
          = false;
         this.peerConnection = new RTCPeerConnection(RTCconfig);
@@ -43095,6 +43168,7 @@ class Peer {
         this.wsSender = signaler;
         this.onPeerMsg = onPeerMsg;
         this.onPeerReady = onNewPeerReady;
+        this.leaveCallback = onPeerLeave;
         // triggered by setting local description
         // create and send ice candidate
         this.peerConnection.onicecandidate = (event)=>{
@@ -43132,6 +43206,7 @@ class Peer {
             };
             this.dataChannel.onclose = (event)=>{
                 console.log("P1: Hey, my data channel was closed!");
+                this.leaveCallback(this.id);
             };
             this.dataChannel.onmessage = (event)=>{
                 // console.log("P1: I just got this message:");
@@ -43220,6 +43295,8 @@ class Networking {
         };
         this.onNewPeer = (x)=>{
         };
+        this.onPeerLeave = (x)=>{
+        };
         this.onServerOpen = ()=>{
         };
         this.visable = false;
@@ -43271,6 +43348,7 @@ class Networking {
         };
         this.onGameList = ()=>{
         }; // just a placeholder, real callback is passed in call to this.getGames
+        this.onPeerLeaveWrapper = this.onPeerLeaveWrapper.bind(this);
     }
     setOnPeerMsg(func) {
         this.onPeerMsg = func;
@@ -43279,6 +43357,17 @@ class Networking {
     setOnNewPeer(func) {
         this.onNewPeer = func;
         for (let p of this.peers)p.onPeerReady = func;
+    }
+    setOnPeerLeave(func) {
+        this.onPeerLeave = func;
+        for (let p of this.peers)p.leaveCallback = this.onPeerLeaveWrapper;
+    }
+    onPeerLeaveWrapper(id) {
+        this.peers.filter((p)=>p.id !== id
+        ) // removes peer from peer list
+        ;
+        this.onPeerLeave(id) // calls given callback func
+        ;
     }
     // either gets the existing remote with that id or creates one
     remoteFromId(id, dontCreate = false) {
@@ -43291,7 +43380,7 @@ class Networking {
             const signaler1 = (response)=>{
                 this.wsSend("rtc-signal", response);
             };
-            let newRemote = new Peer(id, this.id, signaler1, this.onPeerMsg, this.onNewPeer);
+            let newRemote = new Peer(id, this.id, signaler1, this.onPeerMsg, this.onNewPeer, this.onPeerLeave);
             this.peers.push(newRemote);
             console.log("new peer");
             return this.peers[this.peers.length - 1];
@@ -43434,18 +43523,20 @@ class GameHost {
             }, id); // give the new client the map
         });
         setInterval(()=>{
-            this.tick();
+            this.netTick();
         }, 1000 / this.tickrate) // set tick interval to send to clients
         ;
         // console.log("sending initial clients the map")
         // networking.rtcSendObj({ type: "world-data", data: this.map })
         console.log("created game host");
-        this.createExplosion = (pos)=>{
+        this.createExplosion = ((pos, fromId)=>{
             console.log("called host create explosion");
-            for (let p of this.players)p.impulseFrom(pos, 0.05);
-        };
+            for (let p of this.players)if (p.id === fromId) p.impulseFrom(pos, 0.04, 0.2, 50);
+            else p.impulseFrom(pos, 0.04, 0.1, 100);
+        }).bind(this);
+        this.onPeerLeave = this.onPeerLeave.bind(this);
     }
-    tick() {
+    netTick() {
         this.tickNum += 1;
         if (this.tickTimes.push({
             num: this.tickNum,
@@ -43505,6 +43596,11 @@ class GameHost {
             console.log("tried to set player data on player that doesnt exist, creating player");
             this.players.push(_player.Player.newRandom(id, this.createExplosion));
         }
+    }
+    onPeerLeave(id) {
+        console.log(`removing player ${id}`);
+        this.players.filter((pl)=>pl.id !== id
+        ); // remove leaving player from list
     }
 }
 
@@ -43580,12 +43676,18 @@ class Explosion {
         const drawPos = this.pos.worldToPixel(view, _index.canvas);
         const worldSize = this.age / this.MAX_AGE * this.size;
         const outerDrawPos = this.pos.plus(new _utils.Vector2(worldSize, 0)).worldToPixel(view, _index.canvas);
+        const maxOuterDrawPos = this.pos.plus(new _utils.Vector2(this.size, 0)).worldToPixel(view, _index.canvas);
         const pixelSize = drawPos.distanceTo(outerDrawPos);
+        const maxPixelSize = drawPos.distanceTo(maxOuterDrawPos);
         _index.ctx.beginPath();
         _index.ctx.strokeStyle = `rgb(${_utils.round(255 * this.age / this.MAX_AGE)}, 0, 50)`;
         _index.ctx.lineWidth = 3;
         _index.ctx.arc(drawPos.x, drawPos.y, pixelSize, 0, Math.PI * 2);
         _index.ctx.stroke();
+        _index.ctx.beginPath();
+        _index.ctx.fillStyle = `rgba(70, 0, 50, 0.2)`;
+        _index.ctx.arc(drawPos.x, drawPos.y, maxPixelSize, 0, Math.PI * 2);
+        _index.ctx.fill();
     }
     update(dts) {
         this.age += dts;
