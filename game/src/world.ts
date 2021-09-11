@@ -4,6 +4,13 @@ import { getLineRect, Line, round, Vector2 } from "./utils";
 
 export type World = Array<Line>
 
+/**
+ * NOTE: horizontal lines going in -x (left) dont work, please normalize
+ * @param map World as list of lines
+ * @param curPos 
+ * @param lastPos 
+ * @returns line cross if any
+ */
 export function checkCollisions(map: World, curPos: Vector2, lastPos: Vector2): Line | void{
     let ofInterest = []; // lines who we are in the box collider of
     // for every line
@@ -20,8 +27,8 @@ export function checkCollisions(map: World, curPos: Vector2, lastPos: Vector2): 
         const lineAngle = line.p1.angleTo(line.p2)
 
         // find angles from line.p1 to us relative to line
-        const curAngle = line.p1.angleTo(curPos) - lineAngle
-        const lastAngle = line.p1.angleTo(lastPos) - lineAngle
+        const curAngle = line.p1.angleTo(curPos) - lineAngle;
+        const lastAngle = line.p1.angleTo(lastPos) - lineAngle;
 
         if(Math.sign(curAngle) !== Math.sign(lastAngle)){ // flipped sides of the line
             if(Math.abs(curAngle) < 0.2){ // to prevent collisions on back side of line (where angles would be ~pi)
@@ -56,7 +63,7 @@ function checkParr(l1: Line, l2: Line): boolean{
 }
 const MAX_LINE_LENGTH = 5;
 // generate map
-export function generateMap(seed: number, size = 15, density = 0.1): World {
+export function generateMap(seed: number, size = 15, density = 0.15): World {
     let lines: World = []
     console.log(`map seed ${seed}`)
     const random = new Random(MersenneTwister19937.seed(seed));
@@ -66,13 +73,23 @@ export function generateMap(seed: number, size = 15, density = 0.1): World {
         let y1 = random.integer(0, size)
         let x2 = x1 + random.integer(-1, 1)
         let y2 = y1 + random.integer(-1, 1)
-        // to stop starting and ending on the same spot
+        // while the points are on the same spot
+        // or they are out of the world
         while((x1==x2 && y1==y2) || x2 > size || x2 < 0 || y2 > size || y2 < 0){
             x2 = x1 + random.integer(-1, 1)
             y2 = y1 + random.integer(-1, 1)
         }
+        // fixes horizontal left lines
+        if(y1===y2 && x2 < x1){
+            [x1, x2] = [x2, x1];
+        }
         lines.push({ p1: new Vector2(x1 / size, y1 / size), p2: new Vector2(x2 / size, y2 / size)})
     }
+    // create border lines
+    lines.push({p1: new Vector2(0, 0), p2: new Vector2(1, 0)}); // top
+    lines.push({p1: new Vector2(0, 1), p2: new Vector2(1, 1)}); // bottom
+    lines.push({p1: new Vector2(1, 0), p2: new Vector2(1, 1)}); // right
+    lines.push({p1: new Vector2(0, 0), p2: new Vector2(0, 1)}); // left
 
     // let newLines: Map = []
     // // check for long straight lines and combined
@@ -88,4 +105,27 @@ export function generateMap(seed: number, size = 15, density = 0.1): World {
     //     }
     // }
     return lines
+}
+
+// condition should return true to allow
+export function findClosestPoint(map: World, pos: Vector2, condition: (Vector2)=>boolean = ()=>true): Vector2{
+    let minDist = 9999;
+    let minPos = new Vector2(0, 0)
+    for(let line of map){
+        const dist1 = (line.p1.x-pos.x)**2 + (line.p1.y-pos.y)**2;
+        if(dist1 < minDist){
+            if(condition(line.p1)){
+                minDist = dist1;
+                minPos = line.p1;
+            }
+        }
+        const dist2 = (line.p2.x-pos.x)**2 + (line.p2.y-pos.y)**2;
+        if(dist2 < minDist){
+            if(condition(line.p2)){
+                minDist = dist2;
+                minPos = line.p2;
+            }
+        }
+    }
+    return minPos;
 }

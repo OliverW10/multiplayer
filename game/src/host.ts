@@ -14,7 +14,7 @@ export class GameHost {
     mapSeed = 379491230;
     map: World = generateMap(this.mapSeed)
     players: Array<Player> = [];
-    createExplosion: (pos: Vector2)=>void;
+    createExplosion: (pos: Vector2, fromId: number)=>void;
 
     constructor() {
         gamesListOuter!.style.transform = "translate(-50%, -200%)";
@@ -23,6 +23,9 @@ export class GameHost {
             // console.log(`recived message ${JSON.stringify(msg)}`)
             switch(msg.type){
                 case("player-input"):
+                    if(msg.data.noMap){
+                        networking.rtcSendObj({ type: "world-data", data:this.mapSeed })
+                    }
                     this.takePlayerInput(id, msg);
                     break;
                 case("pong"):
@@ -37,20 +40,26 @@ export class GameHost {
             networking.rtcSendObj({ type: "world-data", data: this.mapSeed }, id); // give the new client the map
         })
 
-        setInterval(() => { this.tick() }, 1000 / this.tickrate) // set tick interval to send to clients
+        setInterval(() => { this.netTick() }, 1000 / this.tickrate) // set tick interval to send to clients
         // console.log("sending initial clients the map")
         // networking.rtcSendObj({ type: "world-data", data: this.map })
         console.log("created game host")
 
-        this.createExplosion = (pos: Vector2)=>{
+        this.createExplosion = ( (pos: Vector2, fromId: number)=>{
             console.log("called host create explosion")
             for(let p of this.players){
-                p.impulseFrom(pos, 0.05)
+                if(p.id === fromId){
+                    p.impulseFrom(pos, 0.04, 0.2, 50);
+                }else{
+                    p.impulseFrom(pos, 0.04, 0.1, 100);
+                }
             }
-        }
+        } ).bind(this);
+
+        this.onPeerLeave = this.onPeerLeave.bind(this);
     }
 
-    tick() {
+    netTick() {
         this.tickNum += 1;
         if(this.tickTimes.push({num: this.tickNum, time: performance.now()}) >= 30){ // push returns length
             this.tickTimes.shift()
@@ -73,7 +82,7 @@ export class GameHost {
         // is called from main animation loop
 
         for (let player of this.players) {
-            player.update(dt, this.map)
+            player.update(dt, this.map, true)
         }
     }
 
@@ -122,5 +131,10 @@ export class GameHost {
             console.log("tried to set player data on player that doesnt exist, creating player")
             this.players.push(Player.newRandom(id, this.createExplosion))
         }
+    }
+
+    onPeerLeave(id: number){
+        console.log(`removing player ${id}`)
+        this.players.filter(pl=>pl.id !== id); // remove leaving player from list
     }
 }

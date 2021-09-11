@@ -1,9 +1,15 @@
 
 Peer to peer multiplayer game using webRTC
 
+bundles with parcel
 
-game/ `parcel watch src/index.html --public-url ./`
+run locally with 
 
-game/ `http-server dist`
+    game/ `npm run dev`
+or
 
-backend/ `nodemon index.js`
+    game/ `npm run deploy`
+
+backend for signaling and STUN hosted at https://multiplayer-backend.olikat.repl.co/ but you can start locally with
+
+    backend/ `node index.js`

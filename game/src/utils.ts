@@ -43,11 +43,19 @@ export class Vector2{
         return Math.sqrt((to.x-this.x)**2 + (to.y-this.y)**2)
     }
 
-    // transforms a position from world corodinates to screen cordinates
+    // transforms a position from world corodinates to screen percentage
     worldToView(view: Rect): Vector2{
         return new Vector2(
             (this.x-view.x) / view.w,
             (this.y-view.y) / view.h,
+        )
+    }
+
+    // transforms a position from screen percentage to world cordinates
+    viewToWorld(view: Rect): Vector2{
+        return new Vector2(
+            view.x+(this.x*view.w),
+            view.y+(this.y/view.h),
         )
     }
 
@@ -56,10 +64,22 @@ export class Vector2{
         return new Vector2(scaleNumber(this.x, 0, 1, 0, canvas.width), scaleNumber(this.y, 0, 1, 0, canvas.height))
     }
 
+    // from screen pixels to screen percent
+    pixelToScreen(canvas: HTMLCanvasElement): Vector2{
+        return new Vector2(scaleNumber(this.x, 0, canvas.width, 0, 1), scaleNumber(this.y, 0, canvas.height, 0, 1))
+    }
+
     // from world to screen pixels
-    worldToPixel(view:Rect, canvas: HTMLCanvasElement): Vector2{
+    worldToPixel(view: Rect, canvas: HTMLCanvasElement): Vector2{
         return this.worldToView(view).screenToPixel(canvas)
     }
+
+    // from screen pixels to world codinates
+    pixelToWorld(view: Rect, canvas: HTMLCanvasElement): Vector2{
+        return this.pixelToScreen(canvas).viewToWorld(view)
+    }
+
+   
 
     interpolate(other:Vector2, n=0.5){
         // n at 1 is other, n at 0 is this

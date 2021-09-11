@@ -1,8 +1,8 @@
 // https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking
 // https://raymondgh.github.io/webrtc.html
 
-import { World } from "./world";
 import { playerData } from "./player";
+import { Vector2 } from "./utils";
 
 
 const WS_SERVER = "wss://multiplayer-backend.olikat.repl.co"
@@ -31,9 +31,10 @@ export interface playerInputMessage{ // send from clients to host
     inputX: number,
     lookAngle: number;
     // all action input are optional to save data, assumed false when not present
-    swinging? : boolean,
+    swinging? : Vector2,
     shooting? : boolean,
     detonating? : boolean,
+    noMap?: boolean,
   },
 }
 
@@ -69,11 +70,13 @@ class Peer {
   wsSender: (message: RTCSignal) => void;
   onPeerMsg: (message: peerInterface, id: number) => void;
   onPeerReady: (id: number) => void;
+  leaveCallback: (id: number)=>void;
 
   constructor(id: number, localId: number,
     signaler: (message: RTCSignal) => void,
     onPeerMsg: (message: peerInterface, id: number) => void,
-    onNewPeerReady: (id: number)=>void
+    onNewPeerReady: (id: number)=>void,
+    onPeerLeave: (id: number)=>void,
   ) {
     this.peerConnection = new RTCPeerConnection(RTCconfig);
     this.id = id;
@@ -81,6 +84,7 @@ class Peer {
     this.wsSender = signaler;
     this.onPeerMsg = onPeerMsg;
     this.onPeerReady = onNewPeerReady;
+    this.leaveCallback = onPeerLeave;
 
     // triggered by setting local description
     // create and send ice candidate
@@ -125,6 +129,7 @@ class Peer {
 
       this.dataChannel.onclose = event => {
         console.log("P1: Hey, my data channel was closed!");
+        this.leaveCallback(this.id);
       }
 
       this.dataChannel.onmessage = event => {
@@ -233,6 +238,7 @@ class Networking {
   onGameList: (list: Array<number>) => void; 
   onPeerMsg: (message: peerInterface, id: number) => void = (x)=>{};
   onNewPeer: (id: number)=>void = (x)=>{};
+  onPeerLeave: (id: number)=>void = (x)=>{};
   onServerOpen: ()=>void = ()=>{};
   visable: boolean = false;
   hosting: boolean = false; // wether we are the host of the game
@@ -290,6 +296,7 @@ class Networking {
     };
 
     this.onGameList = () => { }; // just a placeholder, real callback is passed in call to this.getGames
+    this.onPeerLeaveWrapper = this.onPeerLeaveWrapper.bind(this);
   }
 
   public setOnPeerMsg(func: (msg: peerInterface, id: number) => void){
@@ -306,6 +313,19 @@ class Networking {
     }
   }
 
+  public setOnPeerLeave(func: (id: number)=>void): void{
+    this.onPeerLeave = func;
+    for(let p of this.peers){
+      p.leaveCallback = this.onPeerLeaveWrapper;
+    }
+  }
+
+  onPeerLeaveWrapper(id: number){
+    this.peers.filter(p=>p.id!==id) // removes peer from peer list
+    console.log(`removed peer with id ${id}`)
+    this.onPeerLeave(id) // calls given callback func
+  }
+
   // either gets the existing remote with that id or creates one
   private remoteFromId(id: number, dontCreate = false): Peer {
     let temp = this.peers.filter(x => x.id == id) // filters only remotes with current id
@@ -316,7 +336,7 @@ class Networking {
         throw "ID dosent exist"
       }
       const signaler = (response: RTCSignal) => { this.wsSend("rtc-signal", response)}
-      let newRemote = new Peer(id, this.id!, signaler, this.onPeerMsg, this.onNewPeer);
+      let newRemote = new Peer(id, this.id!, signaler, this.onPeerMsg, this.onNewPeer, this.onPeerLeave);
       this.peers.push(newRemote);
       console.log("new peer")
       return this.peers[this.peers.length - 1];

@@ -96,12 +96,19 @@ export class Explosion{ // TODO: make extend particle group
         const drawPos = this.pos.worldToPixel(view, canvas)
         const worldSize = (this.age/this.MAX_AGE) * this.size
         const outerDrawPos = this.pos.plus(new Vector2(worldSize, 0)).worldToPixel(view, canvas)
+        const maxOuterDrawPos = this.pos.plus(new Vector2(this.size, 0)).worldToPixel(view, canvas)
         const pixelSize = drawPos.distanceTo(outerDrawPos)
+        const maxPixelSize = drawPos.distanceTo(maxOuterDrawPos)
         ctx.beginPath();
         ctx.strokeStyle = `rgb(${round(255*this.age/this.MAX_AGE)}, 0, 50)`;
         ctx.lineWidth = 3;
         ctx.arc(drawPos.x, drawPos.y, pixelSize, 0, Math.PI*2);
         ctx.stroke()
+
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(70, 0, 50, 0.2)`;
+        ctx.arc(drawPos.x, drawPos.y, maxPixelSize, 0, Math.PI*2);
+        ctx.fill()
     }
     update(dts: number){
         this.age += dts;
