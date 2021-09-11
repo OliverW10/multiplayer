@@ -476,27 +476,29 @@ class Game {
     constructor(){
         this.framerate = 0;
         this.frametimes = [];
-        this.players = [];
+        this.clientTickRate = 30;
+        this.lastTickTime // time since last tick
+         = 0;
+        this.timeout // time since last network message
+         = 0;
+        this.age = 0;
+        this.lastPong = 0;
+        this.players // list of players, contains us
+         = [];
+        this.explosions = [];
         this.map = [];
         this.viewPos = new _utils.Rect(0, 0, 999, 0.25);
         this.VIEW_MARGIN // draw things up to 0.2 outside view to prevent popin 
          = 0.1;
         this.outerViewPos = new _utils.Rect(0, 0, 999, 0.3);
-        this.clientTickRate = 30;
-        this.lastTickTime // time since last tick
-         = 0;
+        this.VIEWPORT_LEAD = 0.7;
         this.inputX // rotation input + is clockwise
          = 0;
         this.inputY // forwards input + is forwards
          = 0;
         this.lookAngle = 0;
-        this.closesHandle = new _utils.Vector2(-1, -1);
-        this.closesntHandleDist = 99999;
-        this.grabbing = false;
         this.shooting = false;
         this.detonating = false;
-        this.explosions = [];
-        this.VIEWPORT_LEAD = 0.7;
         this.players = [];
         this.createExplosion = (pos, fromId)=>{
             console.log("called create explosion");
@@ -535,17 +537,21 @@ class Game {
                     curIds = game.players.map((x)=>x.id
                     );
                 }
-                _networking.networking.rtcSendObj({
+                if (Math.random() > 0.98) _networking.networking.rtcSendObj({
                     type: "pong",
                     frame: message.frame
                 });
+                game.timeout = 0;
+                game.age = message.frame / _host.GameHost.tickrate;
         }
     }
     render(ctx) {
         ctx.fillStyle = "white";
         ctx.fillRect(0, 0, _index.canvas.width, _index.canvas.height);
+        ctx.beginPath();
         ctx.fillStyle = "red";
-        ctx.arc(_mouse.mouse.x, _mouse.mouse.y, 10, 0, Math.PI * 2);
+        const drawPos = _mouse.mouse.pos.pixelToWorld(this.viewPos, _index.canvas).worldToPixel(this.viewPos, _index.canvas);
+        ctx.arc(drawPos.x, drawPos.y, 10, 0, Math.PI * 2);
         ctx.fill();
         this.viewPos.w = this.viewPos.h * _index.canvas.width / _index.canvas.height;
         this.outerViewPos = new _utils.Rect(this.viewPos.x - this.VIEW_MARGIN / 2, this.viewPos.y - this.VIEW_MARGIN / 2, this.viewPos.w + this.VIEW_MARGIN, this.viewPos.h + this.VIEW_MARGIN);
@@ -556,7 +562,11 @@ class Game {
             this.drawMinimap();
             this.drawPlayers();
         }
-        if (this.us) _utils.showText(ctx, Math.round(this.us.speed * 1000) / 1000 + "/s", _index.canvas.width / 2, _index.canvas.height - 50, 30);
+        if (this.us) {
+            _utils.showText(ctx, Math.round(this.us.speed * 1000) / 1000 + "/s", _index.canvas.width / 2, _index.canvas.height - 50, 30);
+            _utils.showText(ctx, Math.round(_host.GameHost.GAME_LENGTH_S - this.age) + "s", _index.canvas.width - 100, 50, 50);
+        }
+        if (this.timeout > 2) _utils.showText(ctx, `timed out for: ${_utils.round(this.timeout, 1)}s`, _index.canvas.width / 2, _index.canvas.height / 2, 50, "rgb(200, 20, 20)");
         _utils.showText(ctx, Math.round(this.framerate * 100) / 100 + "fps", 100, 50, 30);
     }
     drawMinimap() {
@@ -586,10 +596,13 @@ class Game {
         _index.ctx.fillStyle = "rgba(200, 200, 200, 0.8)";
         _index.ctx.rect(minimapRect.x + this.viewPos.x * minimapRect.w, minimapRect.y + this.viewPos.y * minimapRect.h, minimapRect.w * this.viewPos.w, minimapRect.h * this.viewPos.h);
         _index.ctx.fill();
-        for (let p of this.players){
+        if (this.us) for (let p of this.players){
             // render them on minimap
+            const dist = Math.sqrt((p.pos.x - this.us.pos.x) ** 2 + (p.pos.y - this.us.pos.y) ** 2);
+            if (dist < this.viewPos.w) var alpha = 1;
+            else var alpha = _utils.scaleNumber(dist, this.viewPos.w, 0.4, 1, 0, true);
             _index.ctx.beginPath();
-            _index.ctx.fillStyle = "rgba(255, 0, 0, 1)";
+            _index.ctx.fillStyle = `rgba(50, 50, 50, ${alpha})`;
             _index.ctx.rect(minimapRect.x + p.pos.x * minimapRect.w - 3, minimapRect.y + p.pos.y * minimapRect.h - 3, 6, 6);
             _index.ctx.fill();
         }
@@ -606,8 +619,6 @@ class Game {
         _index.ctx.lineWidth = 2;
         _index.ctx.strokeStyle = "#000";
         // console.log(this.map)
-        this.closesHandle = new _utils.Vector2(-1, -1);
-        this.closesntHandleDist = 999;
         for (let line of this.map)if (line.p1.x > this.outerViewPos.x && line.p1.x < this.outerViewPos.x + this.outerViewPos.w && line.p1.y > this.outerViewPos.y && line.p1.y < this.outerViewPos.y + this.outerViewPos.h || line.p2.x > this.outerViewPos.x && line.p2.x < this.outerViewPos.x + this.outerViewPos.w && line.p2.y > this.outerViewPos.y && line.p2.y < this.outerViewPos.y + this.outerViewPos.h || Math.abs(line.p1.x - line.p2.x) > this.outerViewPos.w || Math.abs(line.p1.y - line.p2.y) > this.outerViewPos.y) {
             const colBox = _utils.getLineRect(line);
             // debug hitboxes
@@ -629,25 +640,11 @@ class Game {
             let end = line.p2.worldToPixel(this.viewPos, _index.canvas);
             _index.ctx.lineTo(end.x, end.y);
             _index.ctx.stroke();
-            if (this.us && !this.us.swinging) {
-                // finding closest handle
-                const dist1 = this.playerDist(line.p1, true);
-                if (dist1 < this.closesntHandleDist && !this.us.recentlySwung.some((x)=>x.p.equals(line.p1)
-                )) {
-                    this.closesHandle = line.p1;
-                    this.closesntHandleDist = dist1;
-                }
-                const dist2 = this.playerDist(line.p2, true);
-                if (dist2 < this.closesntHandleDist && !this.us.recentlySwung.some((x)=>x.p.equals(line.p2)
-                )) {
-                    this.closesHandle = line.p2;
-                    this.closesntHandleDist = dist2;
-                }
-            }
         }
         for (let explo of this.explosions)explo.render(this.viewPos);
         // line showing potential handle
-        if (this.us && this.closesntHandleDist < 998) {
+        if (this.us) {
+            const closesHandle = this.us.findClosestHandle(this.map, _mouse.mouse.pos.pixelToWorld(this.viewPos, _index.canvas)).pos;
             // draw handle effect
             _index.ctx.beginPath();
             _index.ctx.strokeStyle = "rgba(150, 150, 150, 0.8)";
@@ -656,7 +653,7 @@ class Game {
             if (us) {
                 let start = us.pos.worldToPixel(this.viewPos, _index.canvas);
                 _index.ctx.moveTo(start.x, start.y);
-                let end = this.closesHandle.worldToPixel(this.viewPos, _index.canvas);
+                let end = closesHandle.worldToPixel(this.viewPos, _index.canvas);
                 _index.ctx.lineTo(end.x, end.y);
                 _index.ctx.stroke();
                 _index.ctx.beginPath();
@@ -691,31 +688,41 @@ class Game {
     update(dt) {
         // dt in ms
         const dts = dt / 1000; // delta time seconds
+        this.age += dts;
         for(let i = 0; i < this.players.length; i++)this.players[i].update(dt, this.map);
-        if (_keyboard.keyboard.checkKey("KeyD")) this.inputX += dt;
-        if (_keyboard.keyboard.checkKey("KeyA")) this.inputX -= dt;
-        if (_keyboard.keyboard.checkKey("KeyW")) this.inputY += dt;
-        if (_keyboard.keyboard.checkKey("KeyS")) this.inputY -= dt;
-        if (_keyboard.keyboard.checkKey("Space")) this.grabbing = true;
-        else this.grabbing = false;
-        if (_mouse.mouse.hasClicked("left")) this.shooting = true;
-        this.detonating = _mouse.mouse.right;
-        this.lastTickTime += dt;
         const us = this.getOurPlayer();
         if (us) {
+            //// getting input ////
+            if (_keyboard.keyboard.checkKey("KeyD")) this.inputX += dt;
+            if (_keyboard.keyboard.checkKey("KeyA")) this.inputX -= dt;
+            if (_keyboard.keyboard.checkKey("KeyW")) this.inputY += dt;
+            if (_keyboard.keyboard.checkKey("KeyS")) this.inputY -= dt;
+            if (_mouse.mouse.left) {
+                if (!this.swingPos) this.swingPos = us.findClosestHandle(this.map, _mouse.mouse.pos.pixelToWorld(this.viewPos, _index.canvas)).pos;
+            } else this.swingPos = undefined;
+            if (_keyboard.keyboard.checkKeySince("Space")) {
+                if (us.bulletAlive) this.detonating = true;
+                else this.shooting = true;
+            }
             const viewTarget = new _utils.Vector2(us.pos.x + us.speed * Math.cos(us.angle) * this.VIEWPORT_LEAD, us.pos.y + us.speed * Math.sin(us.angle) * this.VIEWPORT_LEAD);
             this.viewPos.h = _utils.scaleNumber(us.speed, 0, 0.1, 0.25, 0.35, true);
             this.viewPos.setMid(this.viewPos.middle().interpolate(viewTarget, dts * 5));
             // this.viewPos.setMid(viewTarget)
             const outDrawPos = us.pos.worldToPixel(this.viewPos, _index.canvas);
-            this.lookAngle = outDrawPos.angleTo(new _utils.Vector2(_mouse.mouse.x, _mouse.mouse.y));
+            this.lookAngle = outDrawPos.angleTo(new _utils.Vector2(_mouse.mouse.pos.x, _mouse.mouse.pos.y));
+            // client side prediction
             us.setLookAngle(this.lookAngle);
             us.takeInput(this.getInput(false), this.map, true) // only for local
             ;
+            if (this.shooting && us.netBulletAlive) // means the shot has been comfired
+            // may cause issues when you try to shoot just after your last bullet dissapears
+            this.shooting = false;
         }
+        this.lastTickTime += dt;
         for (let explo of this.explosions)explo.update(dts);
         this.explosions = this.explosions.filter((x)=>x.alive
         );
+        this.timeout += dts;
         this.frametimes.push(dt);
         if (this.frametimes.length > 10) this.frametimes.shift(); // removes the oldest item
         this.framerate = 1 / (this.frametimes.reduce((a, b)=>a + b
@@ -729,14 +736,16 @@ class Game {
     joinGame(id) {
         if (_networking.networking.gamesList.some((x)=>x == id
         )) {
-            _networking.networking.joinGame(id);
-            gamesListOuter.style.transform = "translate(-50%, -200%)";
-            this.sendInput = this.sendInput.bind(this);
-            _networking.networking.setOnNewPeer(()=>{
-                console.log("set sendinput callback");
-                setInterval(this.sendInput, 1000 / this.clientTickRate);
-            });
-            game.sendInput(); // send input back after the tick
+            if (_networking.networking.id && id !== _networking.networking.id) {
+                _networking.networking.joinGame(id);
+                gamesListOuter.style.transform = "translate(-50%, -200%)";
+                this.sendInput = this.sendInput.bind(this);
+                _networking.networking.setOnNewPeer(()=>{
+                    console.log("set sendinput callback");
+                    setInterval(this.sendInput, 1000 / this.clientTickRate);
+                });
+                this.sendInput(); // send input back after the tick
+            } else console.log("tried to join our own game");
         } else console.log("game dosent exist");
     }
     // send the server info for this client
@@ -763,13 +772,14 @@ class Game {
                 lookAngle: this.lookAngle
             }
         };
-        if (this.grabbing) obj.data["swinging"] = true;
-        if (this.shooting) obj.data["shooting"] = true;
-        if (this.detonating) obj.data["detonating"] = true;
+        if (this.swingPos) obj.data.swingPos = this.swingPos;
+        if (this.shooting) obj.data.shooting = true;
+        if (this.detonating) obj.data.detonating = true;
+        if (this.map.length === 0) obj.data.noMap = true;
         if (forSend) {
             this.inputX = 0;
             this.inputY = 0;
-            this.shooting = false;
+            // this.shooting = false;
             this.lastTickTime = 0; // time since last getInput (dt added in update)
         }
         return obj;
@@ -813,6 +823,8 @@ function createGameList(list, ourId) {
         item.remove();
     }
     for (let id of list){
+        if (!id) break;
+         // for some reason sometimes id is null
         let trNode = document.createElement("tr");
         trNode.classList.add("gameListItem");
         let nameNode = document.createElement("td");
@@ -905,9 +917,9 @@ class Player {
          = false;
         this.wasNetSwinging // was swinging last network tick
          = false;
-        this.SWING_COOLDOWN = 1.5;
-        this.bulletPos // since each player can have max 1 bullet it dosent make sense to have a seperate class
-         = new _utils.Vector2(0, 0);
+        this.SWING_COOLDOWN = 0.2;
+        // since each player can have max 1 bullet it dosent make sense to have a seperate class
+        this.bulletPos = new _utils.Vector2(0, 0);
         this.bulletAngle = 0;
         this.bulletAge = 0;
         this.bulletAlive // most recent state of bullet
@@ -917,7 +929,7 @@ class Player {
         this.BULLET_SPEED // map widths per second
          = 0.1;
         this.BULLET_LIFETIME // seconds
-         = 10;
+         = 100;
         this.lastBulletPos = new _utils.Vector2(0, 0);
         this.onCreateExplosion = (_)=>{
         };
@@ -1010,7 +1022,8 @@ class Player {
         // ping
         _utils.showText(_index.ctx, `id: ${this.id}  ${_utils.round(this.ping, 2)}ms`, drawPos.x, drawPos.y - 30, 10);
     }
-    update(dt, map) {
+    update(dt, map, isHost = false) {
+        typeof this.pos.x !== "number" || this.pos.y;
         this.lastPos = new _utils.Vector2(this.pos.x, this.pos.y);
         const dts = dt / 1000;
         if (this.swinging) {
@@ -1025,6 +1038,7 @@ class Player {
             // update the speed
             const displacment = clampPos.minus(relPos) // amount moved this update
             ;
+            // only set speed on first update to prevent unintentional "drag" from rotation
             if (this.wasSwinging == false) this.speed = displacment.length() / dts;
             // update the angle (maybe need change)
             this.angle = Math.atan2(displacment.y, displacment.x);
@@ -1071,7 +1085,10 @@ class Player {
             this.bulletAge += dts;
             if (this.bulletAge > this.BULLET_LIFETIME) this.bulletAlive = false;
             const bulletColLine = _world.checkCollisions(map, this.bulletPos, this.lastBulletPos);
-            if (bulletColLine) this.bulletAlive = false;
+            if (bulletColLine) {
+                this.bulletAlive = false;
+                this.onCreateExplosion(this.bulletPos, this.id);
+            }
             this.lastBulletPos = this.bulletPos.copy();
         }
         this.damageTime += dts;
@@ -1115,21 +1132,13 @@ class Player {
                 this.bulletAlive = true;
                 this.netBulletAlive = true;
             } else if (this.netBulletAlive) {
+                // for both detonating and hitting a wall
                 this.bulletAlive = false;
                 this.netBulletAlive = false;
                 this.onCreateExplosion(this.bulletPos, this.id);
             }
         }
     }
-    // controlUpdate(dt: number, keyboard: Keyboard, mouse: Mouse) {
-    //     let dts = dt/1000;
-    //     if(keyboard.checkKey("KeyW")){
-    //         this.speed += dts*0.1
-    //     }
-    //     if(keyboard.checkKey("KeyS")){
-    //         this.speed += dts*0.1
-    //     }
-    // }
     toData() {
         // returns playerData object for host to send to clients
         let temp = {
@@ -1154,16 +1163,17 @@ class Player {
         this.lookAngle = angle;
     }
     // host takes client input
+    // local true if its client side prediction
     takeInput(msg, map, local = false) {
         this.inputX = _utils.clamp(msg.data.inputX, -1, 1);
         this.inputY = _utils.clamp(msg.data.inputY, -1, 1);
         this.lookAngle = msg.data.lookAngle;
-        if (msg.data.swinging) {
+        if (msg.data.swingPos) {
             if (!this.swinging) {
                 console.log("set swinging");
-                const closest = this.findClosestHandle(map);
-                this.swingPos = closest.pos;
-                this.swingDist = closest.dist;
+                // const closest = this.findClosestHandle(map)
+                this.swingPos = _utils.Vector2.fromObj(msg.data.swingPos); // trusts clients for swing pos
+                this.swingDist = this.swingPos.distanceTo(this.pos);
                 this.swinging = true;
             }
         } else {
@@ -1173,48 +1183,38 @@ class Player {
             });
             this.swinging = false;
         }
-        if (msg.data.shooting) {
-            if (this.bulletAlive === false) {
-                this.bulletAlive = true;
-                this.bulletPos = this.pos.copy();
-                this.bulletAge = 0;
-                this.bulletAngle = this.angle; // this.lookAngle
+        // only run on host, no client side bullet prediction
+        // to prevent double explosions and other bugs
+        if (!local) {
+            if (msg.data.shooting) {
+                if (this.bulletAlive === false) {
+                    this.bulletAlive = true;
+                    this.bulletPos = this.pos.copy();
+                    this.bulletAge = 0;
+                    this.bulletAngle = this.angle; // this.lookAngle
+                }
             }
-        }
-        if (msg.data.detonating) {
-            if (this.bulletAlive) {
-                if (!local) {
+            if (msg.data.detonating) {
+                if (this.bulletAlive) {
                     this.bulletAlive = false;
-                    this.onCreateExplosion(this.bulletPos, this.id) // probrobly best to wait for comfirmation from server before showing effect
-                    ;
+                    this.onCreateExplosion(this.bulletPos, this.id);
                 }
             }
         }
     }
-    findClosestHandle(map) {
-        let minDist = 9999;
-        let minPos = new _utils.Vector2(0, 0);
-        for (let line of map){
-            const dist1 = (line.p1.x - this.pos.x) ** 2 + (line.p1.y - this.pos.y) ** 2;
-            if (dist1 < minDist) {
-                if (!this.recentlySwung.some((x)=>x.p.equals(line.p1)
-                )) {
-                    minDist = dist1;
-                    minPos = line.p1;
-                }
-            }
-            const dist2 = (line.p2.x - this.pos.x) ** 2 + (line.p2.y - this.pos.y) ** 2;
-            if (dist2 < minDist) {
-                if (!this.recentlySwung.some((x)=>x.p.equals(line.p2)
-                )) {
-                    minDist = dist2;
-                    minPos = line.p2;
-                }
-            }
-        }
+    // returns the closest handle to pos but gives dist to player
+    // if no pos is given it finds to the player
+    findClosestHandle(map, pos) {
+        if (!pos) pos = this.pos;
+        // tests if the pos is in recentlySwung
+        const fn = (x)=>{
+            return true;
+        } //( (testPos)=>{ !this.recentlySwung.some((x)=>x.p.equals(testPos)) } ).bind(this)
+        ;
+        const closest = _world.findClosestPoint(map, pos, fn);
         return {
-            pos: minPos,
-            dist: Math.sqrt(minDist)
+            pos: closest,
+            dist: Math.sqrt((this.pos.x - closest.x) ** 2 + (this.pos.y - closest.y) ** 2)
         };
     }
     /**
@@ -1227,27 +1227,40 @@ class Player {
         const diff = pos.minus(this.pos); // vector to get from player to pos
         const dist = _utils.scaleNumber(diff.length(), 0, size, 1, 0);
         if (diff.length() < size) {
-            let newPos = this.pos.plus(diff.normalize().times(-1 * dist * speed)) // move player away from pos by dist * speed
-            ;
-            newPos = newPos.plus(new _utils.Vector2(Math.cos(this.angle) * this.speed, Math.sin(this.angle) * this.speed)) // move player as noramlly
-            ;
+            // move player away from pos by dist * speed
+            let newPos = this.pos.plus(diff.normalize().times(-1 * dist * speed));
+            // do player movement for 1s
+            newPos = newPos.plus(new _utils.Vector2(Math.cos(this.angle) * this.speed, Math.sin(this.angle) * this.speed));
             // work out new angle and speed
             this.angle = this.pos.angleTo(newPos);
             this.speed = this.pos.distanceTo(newPos);
             this.health -= dist * dmg;
             this.damageTime = 0;
-            if (this.health < 0) Object.assign(this, Player.newRandom(this.id, this.onCreateExplosion)); // overrides this with a new random player
+            if (this.health < 0) this.reset();
         }
+    }
+    reset() {
+        // overrides this with a new random player
+        Object.assign(this, Player.newRandom(this.id, this.onCreateExplosion));
     }
 }
 
 },{"./world":"h3nIe","./utils":"4z3Uv","./index":"4aleK","@parcel/transformer-js/src/esmodule-helpers.js":"jgVJB"}],"h3nIe":[function(require,module,exports) {
 var parcelHelpers = require("@parcel/transformer-js/src/esmodule-helpers.js");
 parcelHelpers.defineInteropFlag(exports);
-parcelHelpers.export(exports, "checkCollisions", ()=>checkCollisions
+/**
+ * NOTE: horizontal lines going in -x (left) dont work, please normalize
+ * @param map World as list of lines
+ * @param curPos 
+ * @param lastPos 
+ * @returns line cross if any
+ */ parcelHelpers.export(exports, "checkCollisions", ()=>checkCollisions
 );
 // generate map
 parcelHelpers.export(exports, "generateMap", ()=>generateMap
+);
+// condition should return true to allow
+parcelHelpers.export(exports, "findClosestPoint", ()=>findClosestPoint
 );
 var _randomJs = require("random-js");
 var _utils = require("./utils");
@@ -1295,11 +1308,17 @@ function generateMap(seed, size = 15, density = 0.15) {
         let y1 = random.integer(0, size);
         let x2 = x1 + random.integer(-1, 1);
         let y2 = y1 + random.integer(-1, 1);
-        // to stop starting and ending on the same spot
+        // while the points are on the same spot
+        // or they are out of the world
         while(x1 == x2 && y1 == y2 || x2 > size || x2 < 0 || y2 > size || y2 < 0){
             x2 = x1 + random.integer(-1, 1);
             y2 = y1 + random.integer(-1, 1);
         }
+        // fixes horizontal left lines
+        if (y1 === y2 && x2 < x1) [x1, x2] = [
+            x2,
+            x1
+        ];
         lines.push({
             p1: new _utils.Vector2(x1 / size, y1 / size),
             p2: new _utils.Vector2(x2 / size, y2 / size)
@@ -1336,6 +1355,28 @@ function generateMap(seed, size = 15, density = 0.15) {
     //     }
     // }
     return lines;
+}
+function findClosestPoint(map, pos, condition = ()=>true
+) {
+    let minDist = 9999;
+    let minPos = new _utils.Vector2(0, 0);
+    for (let line of map){
+        const dist1 = (line.p1.x - pos.x) ** 2 + (line.p1.y - pos.y) ** 2;
+        if (dist1 < minDist) {
+            if (condition(line.p1)) {
+                minDist = dist1;
+                minPos = line.p1;
+            }
+        }
+        const dist2 = (line.p2.x - pos.x) ** 2 + (line.p2.y - pos.y) ** 2;
+        if (dist2 < minDist) {
+            if (condition(line.p2)) {
+                minDist = dist2;
+                minPos = line.p2;
+            }
+        }
+    }
+    return minPos;
 }
 
 },{"random-js":"8gmSt","./utils":"4z3Uv","@parcel/transformer-js/src/esmodule-helpers.js":"jgVJB"}],"8gmSt":[function(require,module,exports) {
@@ -4145,8 +4186,8 @@ exports.finished = require('./lib/internal/streams/end-of-stream.js');
 exports.pipeline = require('./lib/internal/streams/pipeline.js');
 
 },{"./lib/_stream_readable.js":"9cK50","./lib/_stream_writable.js":"7HBJH","./lib/_stream_duplex.js":"hAmfO","./lib/_stream_transform.js":"dNDMs","./lib/_stream_passthrough.js":"eUeuw","./lib/internal/streams/end-of-stream.js":"bYFiF","./lib/internal/streams/pipeline.js":"gyCZi"}],"9cK50":[function(require,module,exports) {
-var global = arguments[3];
 var process = require("process");
+var global = arguments[3];
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -8665,8 +8706,8 @@ exports.finished = require('./lib/internal/streams/end-of-stream.js');
 exports.pipeline = require('./lib/internal/streams/pipeline.js');
 
 },{"./lib/_stream_readable.js":"c7aaL","./lib/_stream_writable.js":"HNUwC","./lib/_stream_duplex.js":"hvWZ9","./lib/_stream_transform.js":"deoHA","./lib/_stream_passthrough.js":"jFaz4","./lib/internal/streams/end-of-stream.js":"3aItU","./lib/internal/streams/pipeline.js":"6IT4y"}],"c7aaL":[function(require,module,exports) {
-var global = arguments[3];
 var process = require("process");
+var global = arguments[3];
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -10065,8 +10106,8 @@ Object.defineProperty(Duplex.prototype, 'destroyed', {
 });
 
 },{"process":"41iPy","./_stream_readable":"c7aaL","./_stream_writable":"HNUwC","inherits":"iuCHA"}],"HNUwC":[function(require,module,exports) {
-var global = arguments[3];
 var process = require("process");
+var global = arguments[3];
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -11675,8 +11716,8 @@ module.exports = function(iterations, keylen) {
 };
 
 },{}],"aSlnk":[function(require,module,exports) {
-var global = arguments[3];
 var process = require("process");
+var global = arguments[3];
 var defaultEncoding;
 /* istanbul ignore next */ if (global.process && global.process.browser) defaultEncoding = 'utf-8';
 else if (global.process && global.process.version) {
@@ -42930,17 +42971,33 @@ class Vector2 {
     distanceTo(to) {
         return Math.sqrt((to.x - this.x) ** 2 + (to.y - this.y) ** 2);
     }
-    // transforms a position from world corodinates to screen cordinates
+    // fast version dosent do sqrt if you only care about relative distance
+    distanceToF(to) {
+        return (to.x - this.x) ** 2 + (to.y - this.y) ** 2;
+    }
+    // transforms a position from world corodinates to screen percentage
     worldToView(view) {
         return new Vector2((this.x - view.x) / view.w, (this.y - view.y) / view.h);
+    }
+    // transforms a position from screen percentage to world cordinates
+    viewToWorld(view) {
+        return new Vector2(view.x + this.x * view.w, view.y + this.y * view.h);
     }
     // transform a screen position 0-1 to pixel cordinate
     screenToPixel(canvas) {
         return new Vector2(scaleNumber(this.x, 0, 1, 0, canvas.width), scaleNumber(this.y, 0, 1, 0, canvas.height));
     }
+    // from screen pixels to screen percent
+    pixelToScreen(canvas) {
+        return new Vector2(scaleNumber(this.x, 0, canvas.width, 0, 1), scaleNumber(this.y, 0, canvas.height, 0, 1));
+    }
     // from world to screen pixels
     worldToPixel(view, canvas) {
         return this.worldToView(view).screenToPixel(canvas);
+    }
+    // from screen pixels to world codinates
+    pixelToWorld(view, canvas) {
+        return this.pixelToScreen(canvas).viewToWorld(view);
     }
     interpolate(other, n = 0.5) {
         // n at 1 is other, n at 0 is this
@@ -42962,6 +43019,9 @@ class Vector2 {
     // to prevent shallow copying
     copy() {
         return new Vector2(this.x, this.y);
+    }
+    static fromObj(obj) {
+        return new Vector2(obj.x, obj.y);
     }
 }
 class Rect {
@@ -43060,10 +43120,10 @@ parcelHelpers.defineInteropFlag(exports);
 parcelHelpers.export(exports, "mouse", ()=>mouse
 );
 var _index = require("./index");
+var _utils = require("./utils");
 class Mouse {
     constructor(){
-        this.x = 0;
-        this.y = 0;
+        this.pos = new _utils.Vector2(0, 0);
         this.left = false;
         this.hasLeft = false;
         this.right = false;
@@ -43072,8 +43132,8 @@ class Mouse {
         this.hasMiddle = false;
         document.addEventListener('mousemove', (evt)=>{
             const rect = _index.canvas.getBoundingClientRect();
-            this.x = evt.clientX - rect.left;
-            this.y = evt.clientY - rect.top;
+            this.pos.x = evt.clientX - rect.left;
+            this.pos.y = evt.clientY - rect.top;
         }, false);
         document.addEventListener('mousedown', (event)=>{
             switch(event.button){
@@ -43115,7 +43175,7 @@ class Mouse {
 }
 const mouse = new Mouse();
 
-},{"./index":"4aleK","@parcel/transformer-js/src/esmodule-helpers.js":"jgVJB"}],"jDuca":[function(require,module,exports) {
+},{"./index":"4aleK","@parcel/transformer-js/src/esmodule-helpers.js":"jgVJB","./utils":"4z3Uv"}],"jDuca":[function(require,module,exports) {
 var parcelHelpers = require("@parcel/transformer-js/src/esmodule-helpers.js");
 parcelHelpers.defineInteropFlag(exports);
 parcelHelpers.export(exports, "keyboard", ()=>keyboard
@@ -43127,20 +43187,33 @@ class Keyboard {
     the key is the key name and the value is a bool of if it is pressed
     */ this.keys = {
         };
+        this.keysSince = {
+        };
         this.pressedAnyKey //initially false then true forever after any keypress
          = false;
         document.addEventListener('keydown', (event)=>{
             this.keys[event.code] = true;
+            this.keysSince[event.code] = true;
             this.pressedAnyKey = true;
-        // console.log(this.keys)
+            console.log(this.keys, this.keysSince);
         });
         document.addEventListener('keyup', (event)=>{
             this.keys[event.code] = false;
         });
     }
     checkKey(key) {
-        if (key in this.keys) return this.keys[key];
+        let k;
+        if (k in this.keys) return this.keys[k];
         else return false; // key has never been pressed yet
+    }
+    // checks if the key has been pressed since this was last called with that key
+    checkKeySince(key) {
+        let k;
+        if (k in this.keysSince) {
+            delete this.keysSince[k];
+            return true;
+        }
+        return false;
     }
 }
 const keyboard = new Keyboard();
@@ -43366,6 +43439,7 @@ class Networking {
         this.peers.filter((p)=>p.id !== id
         ) // removes peer from peer list
         ;
+        console.log(`removed peer with id ${id}`);
         this.onPeerLeave(id) // calls given callback func
         ;
     }
@@ -43492,20 +43566,31 @@ var _game = require("./game");
 var _networking = require("./networking");
 var _player = require("./player");
 var _world = require("./world");
+var gameState;
+(function(gameState1) {
+    gameState1[gameState1["playing"] = 0] = "playing";
+    gameState1[gameState1["endGame"] = 1] = "endGame";
+})(gameState || (gameState = {
+}));
 class GameHost {
     constructor(){
-        this.tickrate = 30;
+        this.tickrate = GameHost.tickrate;
         this.tickNum = 0;
         this.tickTimes = [];
         this.mapSeed = 379491230;
         this.map = _world.generateMap(this.mapSeed);
         this.players = [];
+        this.state = gameState.playing;
         _game.gamesListOuter.style.transform = "translate(-50%, -200%)";
         // override networkings callbacks
         _networking.networking.setOnPeerMsg((msg, id)=>{
             // console.log(`recived message ${JSON.stringify(msg)}`)
             switch(msg.type){
                 case "player-input":
+                    if (msg.data.noMap) _networking.networking.rtcSendObj({
+                        type: "world-data",
+                        data: this.mapSeed
+                    });
                     this.takePlayerInput(id, msg);
                     break;
                 case "pong":
@@ -43554,7 +43639,7 @@ class GameHost {
     phyTick(dt) {
         // phsics update happens more often than network tick
         // is called from main animation loop
-        for (let player of this.players)player.update(dt, this.map);
+        for (let player of this.players)player.update(dt, this.map, true);
     }
     // decides what data to send to the given player
     generateGameState(id = -1) {
@@ -43603,6 +43688,9 @@ class GameHost {
         ); // remove leaving player from list
     }
 }
+GameHost.tickrate = 30;
+GameHost.GAME_LENGTH_S = 300;
+GameHost.GAME_LENGTH_T = GameHost.GAME_LENGTH_S * GameHost.tickrate;
 
 },{"./game":"xpO2s","./networking":"kgVGJ","./player":"d8bg0","./world":"h3nIe","@parcel/transformer-js/src/esmodule-helpers.js":"jgVJB"}],"9txKF":[function(require,module,exports) {
 var parcelHelpers = require("@parcel/transformer-js/src/esmodule-helpers.js");
