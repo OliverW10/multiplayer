@@ -701,8 +701,13 @@ class Game {
                 if (!this.swingPos) this.swingPos = us.findClosestHandle(this.map, _mouse.mouse.pos.pixelToWorld(this.viewPos, _index.canvas)).pos;
             } else this.swingPos = undefined;
             if (_keyboard.keyboard.checkKeySince("Space")) {
-                if (us.bulletAlive) this.detonating = true;
-                else this.shooting = true;
+                if (us.bulletAlive) {
+                    this.detonating = true;
+                    this.shooting = false;
+                } else {
+                    this.shooting = true;
+                    this.detonating = false;
+                }
             }
             const viewTarget = new _utils.Vector2(us.pos.x + us.speed * Math.cos(us.angle) * this.VIEWPORT_LEAD, us.pos.y + us.speed * Math.sin(us.angle) * this.VIEWPORT_LEAD);
             this.viewPos.h = _utils.scaleNumber(us.speed, 0, 0.1, 0.25, 0.35, true);
@@ -2252,8 +2257,8 @@ exports.constants = {
 };
 
 },{"randombytes":"3cRW3","create-hash":"d4N0y","create-hmac":"g9iCi","browserify-sign/algos":"4drwk","pbkdf2":"3Yjkw","browserify-cipher":"9V2K9","diffie-hellman":"a4ccK","browserify-sign":"dK7AH","create-ecdh":"hV7Lh","public-encrypt":"atHIx","randomfill":"Y05bB"}],"3cRW3":[function(require,module,exports) {
-var global = arguments[3];
 var process = require("process");
+var global = arguments[3];
 'use strict';
 // limit of Crypto.getRandomValues()
 // https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues
@@ -4186,8 +4191,8 @@ exports.finished = require('./lib/internal/streams/end-of-stream.js');
 exports.pipeline = require('./lib/internal/streams/pipeline.js');
 
 },{"./lib/_stream_readable.js":"9cK50","./lib/_stream_writable.js":"7HBJH","./lib/_stream_duplex.js":"hAmfO","./lib/_stream_transform.js":"dNDMs","./lib/_stream_passthrough.js":"eUeuw","./lib/internal/streams/end-of-stream.js":"bYFiF","./lib/internal/streams/pipeline.js":"gyCZi"}],"9cK50":[function(require,module,exports) {
-var process = require("process");
 var global = arguments[3];
+var process = require("process");
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -5944,8 +5949,8 @@ Object.defineProperty(Duplex.prototype, 'destroyed', {
 });
 
 },{"process":"41iPy","./_stream_readable":"9cK50","./_stream_writable":"7HBJH","inherits":"iuCHA"}],"7HBJH":[function(require,module,exports) {
-var process = require("process");
 var global = arguments[3];
+var process = require("process");
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -21210,8 +21215,8 @@ Object.defineProperty(Duplex.prototype, 'destroyed', {
 });
 
 },{"process":"41iPy","./_stream_readable":"dS73y","./_stream_writable":"hEPgN","inherits":"iuCHA"}],"hEPgN":[function(require,module,exports) {
-var global = arguments[3];
 var process = require("process");
+var global = arguments[3];
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -43175,7 +43180,7 @@ class Mouse {
 }
 const mouse = new Mouse();
 
-},{"./index":"4aleK","@parcel/transformer-js/src/esmodule-helpers.js":"jgVJB","./utils":"4z3Uv"}],"jDuca":[function(require,module,exports) {
+},{"./index":"4aleK","./utils":"4z3Uv","@parcel/transformer-js/src/esmodule-helpers.js":"jgVJB"}],"jDuca":[function(require,module,exports) {
 var parcelHelpers = require("@parcel/transformer-js/src/esmodule-helpers.js");
 parcelHelpers.defineInteropFlag(exports);
 parcelHelpers.export(exports, "keyboard", ()=>keyboard
@@ -43195,22 +43200,20 @@ class Keyboard {
             this.keys[event.code] = true;
             this.keysSince[event.code] = true;
             this.pressedAnyKey = true;
-            console.log(this.keys, this.keysSince);
+        // console.log(this.keys)
         });
         document.addEventListener('keyup', (event)=>{
             this.keys[event.code] = false;
         });
     }
     checkKey(key) {
-        let k;
-        if (k in this.keys) return this.keys[k];
+        if (key in this.keys) return this.keys[key];
         else return false; // key has never been pressed yet
     }
     // checks if the key has been pressed since this was last called with that key
     checkKeySince(key) {
-        let k;
-        if (k in this.keysSince) {
-            delete this.keysSince[k];
+        if (key in this.keysSince) {
+            delete this.keysSince[key];
             return true;
         }
         return false;
