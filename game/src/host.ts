@@ -1,40 +1,33 @@
-import { Game, gamesListOuter } from "./game";
-import { networking, playerInputMessage, playerStateMessage, pong } from "./networking";
+import { Game } from "./game";
+import { networking, peerInterface, playerInputMessage, playerStateMessage, pong } from "./networking";
 import { Player } from "./player";
-import { Line, round, Vector2 } from "./utils";
+import { Line, myRandom, round, Vector2 } from "./utils";
 import { generateMap, World } from "./world";
 
+enum gameState{
+    playing,
+    endGame,
+}
 
 // only runs on the host, handles phisics, hitreg, game events
 // authorative on everything
 export class GameHost {
-    tickrate = 30;
+    static tickrate = 30;
+    tickrate = GameHost.tickrate;
     tickNum = 0;
     tickTimes: Array<{num: number, time: number}> = [];
-    mapSeed = 379491230;
+    mapSeed = myRandom(9999, 999999);
     map: World = generateMap(this.mapSeed)
     players: Array<Player> = [];
     createExplosion: (pos: Vector2, fromId: number)=>void;
 
+    // game length fixed for now at 5 mins
+    static GAME_LENGTH_S = 5*60
+    static GAME_LENGTH_T = GameHost.GAME_LENGTH_S*GameHost.tickrate; // ticks per game
+    state = gameState.playing;
+
     constructor() {
-        gamesListOuter!.style.transform = "translate(-50%, -200%)";
         // override networkings callbacks
-        networking.setOnPeerMsg((msg, id) => {
-            // console.log(`recived message ${JSON.stringify(msg)}`)
-            switch(msg.type){
-                case("player-input"):
-                    if(msg.data.noMap){
-                        networking.rtcSendObj({ type: "world-data", data:this.mapSeed })
-                    }
-                    this.takePlayerInput(id, msg);
-                    break;
-                case("pong"):
-                    this.takePing(id, msg);
-                    break;
-                default:
-                    console.log("host got something unknown")
-            }
-        })
         networking.setOnNewPeer(id => {
             console.log("sending new client the map")
             networking.rtcSendObj({ type: "world-data", data: this.mapSeed }, id); // give the new client the map
@@ -59,8 +52,28 @@ export class GameHost {
         this.onPeerLeave = this.onPeerLeave.bind(this);
     }
 
+    onPeerMsg(msg: peerInterface, id: number) {
+        // console.log(`recived message ${JSON.stringify(msg)}`)
+        switch(msg.type){
+            case("player-input"):
+                if(msg.data.noMap){
+                    networking.rtcSendObj({ type: "world-data", data:this.mapSeed })
+                }
+                this.takePlayerInput(id, msg);
+                break;
+            case("pong"):
+                this.takePing(id, msg);
+                break;
+            default:
+                console.log("host got something unknown")
+        }
+    }
+
     netTick() {
         this.tickNum += 1;
+        if(this.tickNum > GameHost.GAME_LENGTH_T){
+            this.reset();
+        }
         if(this.tickTimes.push({num: this.tickNum, time: performance.now()}) >= 30){ // push returns length
             this.tickTimes.shift()
         }
@@ -68,12 +81,8 @@ export class GameHost {
         // network tick
         for (let player of this.players) {
             const info = this.generateGameState(player.id)
-            if (player.id !== networking.id) {
-                networking.rtcSendObj(info, player.id)
-            } else {
-                // send to ourself
-                Game.onPeerMsg(info)
-            }
+            // rtcsendobj will route message to game if its for ourself
+            networking.rtcSendObj(info, player.id)
         }
     }
 
@@ -136,5 +145,14 @@ export class GameHost {
     onPeerLeave(id: number){
         console.log(`removing player ${id}`)
         this.players.filter(pl=>pl.id !== id); // remove leaving player from list
+    }
+
+    reset(){
+        this.tickNum = 0;
+        this.mapSeed = myRandom(9999, 999999);
+        for(let p of this.players){
+            p.reset();
+            networking.rtcSendObj({ type: "world-data", data: this.mapSeed }, p.id); // give the new client the map
+        }
     }
 }

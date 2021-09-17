@@ -1,8 +1,8 @@
-import { canvas } from "./index";
+import { Vector2 } from "./utils";
 
 class Mouse{
-    x: number = 0;
-    y: number = 0;
+    pos: Vector2 = new Vector2(0, 0);
+    posF: Vector2 = new Vector2(0, 0); // float pos (as a percentage of document size)
     left: boolean = false;
     hasLeft: boolean = false;
     right: boolean = false;
@@ -10,13 +10,20 @@ class Mouse{
     middle: boolean = false;
     hasMiddle: boolean = false;
 
+    onMouseMove: (e: MouseEvent)=>void;
+
 	constructor(){ // canvas: HTMLCanvasElement
 
-		document.addEventListener('mousemove', (evt: MouseEvent) => {
-			const rect: DOMRect = canvas.getBoundingClientRect();
-			this.x = evt.clientX - rect.left;
-			this.y = evt.clientY - rect.top;
-		}, false);
+        this.onMouseMove = (evt: MouseEvent) => {
+			const rect: DOMRect = document.body.getBoundingClientRect();
+			this.pos.x = evt.clientX - rect.left;
+			this.pos.y = evt.clientY - rect.top;
+
+            this.posF.x = this.pos.x/document.body.clientWidth;
+            this.posF.y = this.pos.y/document.body.clientHeight;
+		}
+        this.onMouseMove = this.onMouseMove.bind(this)
+		document.addEventListener('mousemove', this.onMouseMove, false);
 
 		document.addEventListener('mousedown', (event: MouseEvent) => {
             switch(event.button){

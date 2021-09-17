@@ -1,6 +1,4 @@
 import { Colour, myRandom, Rect, round, Vector2 } from "./utils";
-import { ctx, canvas } from "./index";
-
 
 // meant to be controlled by particle group
 class Particle{
@@ -17,10 +15,10 @@ class Particle{
         this.size = size;
     }
 
-    render(view: Rect){
+    render(ctx: CanvasRenderingContext2D, view: Rect){
         // doset set its own fill colour, should be set by particle group
 
-        const drawPos = this.pos.worldToPixel(view, canvas)
+        const drawPos = this.pos.worldToPixel(view, ctx.canvas)
         ctx.beginPath();
         ctx.arc(drawPos.x, drawPos.y, this.size, 0, Math.PI*2)
         ctx.fill()
@@ -64,21 +62,13 @@ class ParticleGroup{
             }
         }
     }
-    render(view: Rect){
+    render(ctx: CanvasRenderingContext2D, view: Rect){
         if(this.alive){
             ctx.fillStyle = this.startCol.lerp(this.endCol, this.age/this.lifetime).toRgb();
             for(let p of this.particles){
-                p.render(view);
+                p.render(ctx, view);
             }
         }
-    }
-}
-
-class ParticleManager{
-    groups: Array<ParticleGroup> = []
-
-    constructor(){
-
     }
 }
 
@@ -92,11 +82,11 @@ export class Explosion{ // TODO: make extend particle group
         this.pos = pos;
         this.size = size
     }
-    render(view: Rect){
-        const drawPos = this.pos.worldToPixel(view, canvas)
+    render(ctx: CanvasRenderingContext2D, view: Rect){
+        const drawPos = this.pos.worldToPixel(view, ctx.canvas)
         const worldSize = (this.age/this.MAX_AGE) * this.size
-        const outerDrawPos = this.pos.plus(new Vector2(worldSize, 0)).worldToPixel(view, canvas)
-        const maxOuterDrawPos = this.pos.plus(new Vector2(this.size, 0)).worldToPixel(view, canvas)
+        const outerDrawPos = this.pos.plus(new Vector2(worldSize, 0)).worldToPixel(view, ctx.canvas)
+        const maxOuterDrawPos = this.pos.plus(new Vector2(this.size, 0)).worldToPixel(view, ctx.canvas)
         const pixelSize = drawPos.distanceTo(outerDrawPos)
         const maxPixelSize = drawPos.distanceTo(maxOuterDrawPos)
         ctx.beginPath();

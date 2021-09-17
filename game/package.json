@@ -6,16 +6,19 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "deploy": "parcel build src/index.html --public-url ./ && gh-pages -d dist",
     "parcel-watch": "parcel watch src/index.html --public-url ./ & http-server dist",
-    "server":"http-server dist",
-    "dev":"npm-run-all --parallel parcel-watch server"
+    "server": "http-server dist",
+    "dev": "npm-run-all --parallel parcel-watch server"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "random-js": "^2.1.0"
+    "random-js": "^2.1.0",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
   },
   "devDependencies": {
     "@types/node": "^16.7.10",
-    "@types/seedrandom": "^3.0.1"
+    "@types/seedrandom": "^3.0.1",
+    "@types/react": "^17.0.2"
   }
 }

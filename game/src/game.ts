@@ -6,7 +6,7 @@ import { showText, Vector2, Rect, round, getLineRect, scaleNumber } from "./util
 import { GameHost } from "./host";
 import { Explosion } from "./particle";
 import { generateMap } from "./world";
-import { ctx, canvas } from "./index";
+import { UiMessageType } from ".";
 
 
 // Handles rendering, player input, movement prediction
@@ -18,6 +18,7 @@ export class Game {
     lastTickTime: number = 0; // time since last tick
     timeout = 0; // time since last network message
     age = 0;
+    lastPong = 0;
 
     players: Array<Player> = []; // list of players, contains us
     explosions: Array<Explosion> = [];
@@ -36,34 +37,42 @@ export class Game {
     shooting = false;
     detonating = false;
 
-    createExplosion: (pos: Vector2, fromId: number)=>void;
+    uiCallback: (msgType: UiMessageType, data?: any)=>void;
 
-    constructor() {
+    constructor(uiCallback: (mesType: UiMessageType, data?: any)=>void) {
         this.players = [];
+        this.uiCallback = uiCallback;
 
-        this.createExplosion = (pos: Vector2, fromId: number)=>{
-            console.log("called create explosion")
-            for(let p of game.players){
-                if(p.id === fromId){
-                    p.impulseFrom(pos, 0.04, 0.2, 50);
-                }else{
-                    p.impulseFrom(pos, 0.04, 0.1, 100);
-                }
-            }
-            game.explosions.push(new Explosion(pos, 0.04))
-        }
+        this.createExplosion = this.createExplosion.bind(this);
+        this.onPeerMsg = this.onPeerMsg.bind(this);
     }
 
-    public static onPeerMsg(message: peerInterface): void {
+    createExplosion(pos: Vector2, fromId: number){
+        console.log("called create explosion")
+        for(let p of this.players){
+            if(p.id === fromId){
+                p.impulseFrom(pos, 0.04, 0.2, 50);
+            }else{
+                p.impulseFrom(pos, 0.04, 0.1, 100);
+            }
+        }
+        this.explosions.push(new Explosion(pos, 0.04))
+    }
+
+
+    public onPeerMsg(message: peerInterface): void {
         // console.log(`get message`)
         // console.log(message)
         switch (message.type) {
             case "world-data":
                 const mapData = generateMap(message.data)
                 for (let lineRaw of mapData) {
-                    let line = { p1: new Vector2(lineRaw.p1.x, lineRaw.p1.y), p2: new Vector2(lineRaw.p2.x, lineRaw.p2.y) };
-                    if (!game.map.some(x => { x == line })) { // if we dont already have it
-                        game.map.push(line)
+                    let line = {
+                        p1: new Vector2(lineRaw.p1.x, lineRaw.p1.y),
+                        p2: new Vector2(lineRaw.p2.x, lineRaw.p2.y)
+                    };
+                    if (!this.map.some(x => { x == line })) { // if we dont already have it
+                        this.map.push(line)
                     }
                 }
                 console.log("set map")
@@ -71,31 +80,38 @@ export class Game {
             case "game-state":
                 // console.log("got game state")
                 // console.log(JSON.stringify(message))
-                let curIds = game.players.map(x => x.id)
+                let curIds = this.players.map(x => x.id)
                 for (let player of message.data) {
                     if (curIds.indexOf(player.id) != -1) {
                         const idx = curIds.indexOf(player.id)
-                        game.players[idx].networkUpdate(player)
+                        this.players[idx].networkUpdate(player)
                     } else {
                         console.log(`created new player ${player.id}`) 
-                        game.players.push(Player.fromPlayerData(player, game.createExplosion))
-                        curIds = game.players.map(x => x.id)
+                        this.players.push(Player.fromPlayerData(player, this.createExplosion))
+                        curIds = this.players.map(x => x.id)
                     }
                 }
-                networking.rtcSendObj({type:"pong", frame: message.frame});
-                game.timeout = 0;
+                if(Math.random()>0.98){
+                    networking.rtcSendObj({type:"pong", frame: message.frame});
+                }
+                this.timeout = 0;
+                // corrects timer
+                this.age = message.frame/GameHost.tickrate; // age in seconds (tick number / tick rate)
         }
     }
 
     render(ctx: CanvasRenderingContext2D) {
+        ctx.beginPath();
         ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
+        ctx.beginPath();
         ctx.fillStyle = "red";
-        ctx.arc(mouse.x, mouse.y, 10, 0, Math.PI * 2);
+        const drawPos = mouse.pos.pixelToWorld(this.viewPos, ctx.canvas).worldToPixel(this.viewPos, ctx.canvas);
+        ctx.arc(drawPos.x, drawPos.y, 10, 0, Math.PI*2);
         ctx.fill();
 
-        this.viewPos.w = this.viewPos.h * canvas.width / canvas.height
+        this.viewPos.w = this.viewPos.h * ctx.canvas.width / ctx.canvas.height
 
         this.outerViewPos = new Rect(
             this.viewPos.x-this.VIEW_MARGIN/2,
@@ -107,23 +123,37 @@ export class Game {
         this.us = this.getOurPlayer();
 
         if(this.players.length >= 1){
-            this.drawMap();
-            this.drawMinimap();
-            this.drawPlayers();
+            this.drawMap(ctx);
+            this.drawMinimap(ctx);
+            this.drawPlayers(ctx);
         }
         
         if(this.us){
-            showText(ctx, Math.round(this.us.speed * 1000) / 1000 + "/s", canvas.width/2, canvas.height-50, 30);
+            // speed
+            showText(ctx, Math.round(this.us.speed * 1000) / 1000 + "/s", ctx.canvas.width/2, ctx.canvas.height-50, 30);
+            // timer
+            const timerVal = GameHost.GAME_LENGTH_S-this.age
+            if(timerVal > 8){
+                showText(ctx, Math.round(timerVal) + "s", ctx.canvas.width-100, 50+50/3, 50);
+            }else if(timerVal > 3){
+                const x = scaleNumber(timerVal, 8, 3, ctx.canvas.width-100, ctx.canvas.width/2);
+                const y = scaleNumber(timerVal, 8, 3, 50, ctx.canvas.height/2);
+                const s = scaleNumber(timerVal, 8, 3, 50, ctx.canvas.width/5);
+                showText(ctx, Math.round(timerVal) + "s", x, y+s/3, s);
+            }else{
+                const s = scaleNumber(timerVal, 3, 0, ctx.canvas.width/5, ctx.canvas.width/3, true);
+                showText(ctx, Math.round(timerVal) + "s", ctx.canvas.width/2, ctx.canvas.height/2+s/3, s);
+            }
         }
         if(this.timeout > 2){
-            showText(ctx, `timed out for: ${round(this.timeout, 1)}s`, canvas.width/2, canvas.height/2, 50, "rgb(200, 20, 20)");
+            showText(ctx, `timed out for: ${round(this.timeout, 1)}s`, ctx.canvas.width/2, ctx.canvas.height/2, 50, "rgb(200, 20, 20)");
         }
         showText(ctx, Math.round(this.framerate * 100) / 100 + "fps", 100, 50, 30);
     }
 
-    drawMinimap(){
+    drawMinimap(ctx: CanvasRenderingContext2D){
         // draw minimap
-        let minimapRect = { x: canvas.width - 211, y: canvas.height - 211, w: 200, h: 200 };
+        let minimapRect = { x: ctx.canvas.width - 211, y: ctx.canvas.height - 211, w: 200, h: 200 };
         // background
         ctx.beginPath();
         ctx.fillStyle = "rgba(200, 200, 200, 0.8)"
@@ -153,13 +183,14 @@ export class Game {
             for(let p of this.players){
                 // render them on minimap
                 const dist = Math.sqrt( (p.pos.x-this.us.pos.x)**2 + (p.pos.y-this.us.pos.y)**2 )
-                if(dist < this.viewPos.w){
+                if(dist < this.viewPos.h*1.5){
                     var alpha = 1;
                 }else{
-                    var alpha = scaleNumber(dist, this.viewPos.w, 0.4, 1, 0, true)
+                    console.log(dist)
+                    var alpha = scaleNumber(dist, this.viewPos.h*1.5, 2, 1, 0, true)
                 }
                 ctx.beginPath();
-                ctx.fillStyle = `rgba(50, 50, 50, ${alpha})`
+                ctx.fillStyle = `rgba(100, 50, 50, ${alpha})`
                 ctx.rect(
                     minimapRect.x + p.pos.x * minimapRect.w - 3,
                     minimapRect.y + p.pos.y * minimapRect.h - 3,
@@ -178,13 +209,11 @@ export class Game {
         ctx.beginPath();
     }
 
-    drawMap(){
+    drawMap(ctx: CanvasRenderingContext2D){
         // draw map
         ctx.lineWidth = 2;
         ctx.strokeStyle = "#000";
         // console.log(this.map)
-        let closesHandle = new Vector2(-1, -1); // to display indicator
-        let closesntHandleDist = 999;
         for (let line of this.map) {
             
             if ( // checks if the line is visable (or near)
@@ -221,43 +250,30 @@ export class Game {
 
                 // actual line
                 ctx.beginPath();
-                let start = line.p1.worldToPixel(this.viewPos, canvas)
+                let start = line.p1.worldToPixel(this.viewPos, ctx.canvas)
                 ctx.moveTo(start.x, start.y)
-                let end = line.p2.worldToPixel(this.viewPos, canvas)
+                let end = line.p2.worldToPixel(this.viewPos, ctx.canvas)
                 ctx.lineTo(end.x, end.y)
                 ctx.stroke();
-
-                if(this.us && !this.us.swinging){
-                    // finding closest handle
-                    const dist1 = this.playerDist(line.p1, true)
-                    if( dist1 < closesntHandleDist && !this.us.recentlySwung.some((x)=>x.p.equals(line.p1))){
-                        closesHandle = line.p1;
-                        closesntHandleDist = dist1;
-                    }
-                    const dist2 = this.playerDist(line.p2, true)
-                    if( dist2 < closesntHandleDist && !this.us.recentlySwung.some((x)=>x.p.equals(line.p2))){
-                        closesHandle = line.p2;
-                        closesntHandleDist = dist2;
-                    }
-                }
             }
         }
 
         for(let explo of this.explosions){
-            explo.render(this.viewPos)
+            explo.render(ctx, this.viewPos)
         }
 
         // line showing potential handle
-        if(this.us && closesntHandleDist < 998){
+        if(this.us){
+            const closesHandle = this.us.findClosestHandle(this.map, mouse.pos.pixelToWorld(this.viewPos, ctx.canvas)).pos;
             // draw handle effect
             ctx.beginPath();
             ctx.strokeStyle = "rgba(150, 150, 150, 0.8)";
             ctx.lineWidth = 5;
             const us = this.getOurPlayer();
             if(us){
-                let start = us.pos.worldToPixel(this.viewPos, canvas)
+                let start = us.pos.worldToPixel(this.viewPos, ctx.canvas)
                 ctx.moveTo(start.x, start.y);
-                let end = closesHandle.worldToPixel(this.viewPos, canvas)
+                let end = closesHandle.worldToPixel(this.viewPos, ctx.canvas)
                 ctx.lineTo(end.x, end.y);
                 ctx.stroke();
                 ctx.beginPath();
@@ -267,11 +283,11 @@ export class Game {
         }
     }
 
-    drawPlayers(){
+    drawPlayers(ctx: CanvasRenderingContext2D){
         // our player should be included in players list
         // other players
         for (let p of this.players) {
-            p.render(this.viewPos) // render them
+            p.render(ctx, this.viewPos) // render them
         }
     }
 
@@ -324,17 +340,23 @@ export class Game {
             if (keyboard.checkKey("KeyS")) {
                 this.inputY -= dt;
             }
-            if(keyboard.checkKey("Space")){
+            if(mouse.left){
                 if(!this.swingPos){
-                    this.swingPos = us.findClosestHandle(this.map).pos;
+                    const screenSize = new Vector2(document.body.clientWidth, document.body.clientHeight)
+                    this.swingPos = us.findClosestHandle(this.map, mouse.pos.pixelToWorld(this.viewPos, screenSize)).pos;
                 }
             }else{
                 this.swingPos = undefined;
             }
-            if(mouse.hasClicked("left")){
-                this.shooting = true;
+            if(keyboard.checkKeySince("Space")){ // only fires the first frame you have space pressed
+                if(us.bulletAlive){
+                    this.detonating = true;
+                    this.shooting = false;
+                }else{
+                    this.shooting = true;
+                    this.detonating = false;
+                }
             }
-            this.detonating = mouse.right;
 
             const viewTarget = new Vector2(
                 us.pos.x + us.speed*Math.cos(us.angle)*this.VIEWPORT_LEAD,
@@ -343,8 +365,8 @@ export class Game {
             this.viewPos.h = scaleNumber(us.speed, 0, 0.1, 0.25, 0.35, true);
             this.viewPos.setMid(this.viewPos.middle().interpolate(viewTarget, dts*5))
             // this.viewPos.setMid(viewTarget)
-            const outDrawPos = us.pos.worldToPixel(this.viewPos, canvas);
-            this.lookAngle = outDrawPos.angleTo( new Vector2(mouse.x, mouse.y));
+            // const ourDrawPos = us.pos.worldToPixel(this.viewPos, canvas);
+            // this.lookAngle = ourDrawPos.angleTo( new Vector2(mouse.pos.x, mouse.pos.y));
 
             // client side prediction
             us.setLookAngle(this.lookAngle)
@@ -381,7 +403,8 @@ export class Game {
         if (networking.gamesList.some(x => x == id)) { // if we know the game exists
             if(networking.id && id !== networking.id){
                 networking.joinGame(id);
-                gamesListOuter!.style.transform = "translate(-50%, -200%)";
+                // gamesListOuter!.style.transform = "translate(-50%, -200%)";
+                this.uiCallback(UiMessageType.hideGamesList);
 
                 this.sendInput = this.sendInput.bind(this);
                 networking.setOnNewPeer(()=>{ // when the connection has been created start sending packets
@@ -423,7 +446,7 @@ export class Game {
             },
         } as playerInputMessage;
 
-        if(this.swingPos){ obj.data.swinging = this.swingPos }
+        if(this.swingPos){ obj.data.swingPos = this.swingPos }
         if(this.shooting){  obj.data.shooting = true }
         if(this.detonating){ obj.data.detonating = true }
         if(this.map.length === 0){ obj.data.noMap = true }
@@ -439,7 +462,10 @@ export class Game {
         return obj
     }
     refreshGamesList() {
-        networking.getGames((list) => createGameList(list, networking.id!))
+        let updateGamesList = (list)=>this.uiCallback(UiMessageType.setGameList, list);
+        updateGamesList = updateGamesList.bind(this);
+
+        networking.getGames(updateGamesList);
     }
 
     isHosting() {
@@ -447,104 +473,71 @@ export class Game {
     }
 }
 
-// const physsRate: number = 100; // goal framerate for physics
 
-const game = new Game();
-networking.setOnPeerMsg(Game.onPeerMsg)
-let gameHost: GameHost | undefined; // dont initialize
-
-export let gamesListOuter = document.getElementById("gameListOuter")
-document.getElementById("refreshButton")!.onclick = () => { game.refreshGamesList() }
-document.getElementById("testButton")!.onclick = () => { networking.rtcSendString("this is working YAY!"); console.log("send data") }
-let gameButton = document.getElementById("gameButton");
-if (gameButton) {
-    gameButton.onclick = () => {
-        let x = networking.toggleVis();
-        gameButton!.innerHTML = x ? "toggle game visability [x]" : "toggle game visability [ ]";
-    }
-} else { console.log("game button didnt exist") }
-
-const wsConneectingMsg = document.getElementById("connectingMsg");
-networking.onServerOpen = ()=>{
-    wsConneectingMsg!.style.display = "none";
+// creates game objects and starts main game loop
+function main(c: CanvasRenderingContext2D){
+    
 }
 
-function createGameList(list: Array<number>, ourId: number) {
-    // first clear previouse list
-    let prevItems = document.querySelectorAll(".gameListItem")
-    console.log(prevItems)
-    if (prevItems) {
-        for (var idx = 0; idx < prevItems.length; idx++) {
-            let item = prevItems[idx];
-            item.remove();
-        }
-    }
-    for (let id of list) {
-        let trNode = document.createElement("tr");
-        trNode.classList.add("gameListItem");
+// export let gamesListOuter = document.getElementById("gameListOuter")
+// document.getElementById("refreshButton")!.onclick = () => { game.refreshGamesList() }
+// document.getElementById("testButton")!.onclick = () => { networking.rtcSendString("this is working YAY!"); console.log("send data") }
+// let gameButton = document.getElementById("gameButton");
+// if (gameButton) {
+//     gameButton.onclick = () => {
+//         let x = networking.toggleVis();
+//         gameButton!.innerHTML = x ? "toggle game visability [x]" : "toggle game visability [ ]";
+//     }
+// } else { console.log("game button didnt exist") }
 
-        let nameNode = document.createElement("td");
-        if (id == ourId) {
-            var nameText = document.createTextNode("exampleName (you)");
-        } else {
-            var nameText = document.createTextNode("exampleName");
-        }
-        nameNode.appendChild(nameText);
+// const wsConneectingMsg = document.getElementById("connectingMsg");
+// networking.onServerOpen = ()=>{
+//     wsConneectingMsg!.style.display = "none";
+// }
 
-        let idNode = document.createElement("td");
-        let idText = document.createTextNode(id.toString());
-        idNode.appendChild(idText);
+// function createGameList(list: Array<number>, ourId: number) {
+//     // first clear previouse list
+//     let prevItems = document.querySelectorAll(".gameListItem")
+//     console.log(prevItems)
+//     if (prevItems) {
+//         for (var idx = 0; idx < prevItems.length; idx++) {
+//             let item = prevItems[idx];
+//             item.remove();
+//         }
+//     }
+//     for (let id of list) {
+//         if(!id){break} // for some reason sometimes id is null
+//         let trNode = document.createElement("tr");
+//         trNode.classList.add("gameListItem");
 
-        let playersNode = document.createElement("td");
-        let playersText = document.createTextNode("exampleName");
-        playersNode.appendChild(playersText);
+//         let nameNode = document.createElement("td");
+//         if (id == ourId) {
+//             var nameText = document.createTextNode("exampleName (you)");
+//         } else {
+//             var nameText = document.createTextNode("exampleName");
+//         }
+//         nameNode.appendChild(nameText);
 
-        trNode.appendChild(nameNode);
-        trNode.appendChild(idNode);
-        trNode.appendChild(playersNode);
+//         let idNode = document.createElement("td");
+//         let idText = document.createTextNode(id.toString());
+//         idNode.appendChild(idText);
 
-        trNode.onclick = () => { game.joinGame(id) }
+//         let playersNode = document.createElement("td");
+//         let playersText = document.createTextNode("exampleName");
+//         playersNode.appendChild(playersText);
 
-        document.getElementById("gameList")?.appendChild(trNode);
-    }
-}
+//         trNode.appendChild(nameNode);
+//         trNode.appendChild(idNode);
+//         trNode.appendChild(playersNode);
+
+//         trNode.onclick = () => { game.joinGame(id) }
+
+//         document.getElementById("gameList")?.appendChild(trNode);
+//     }
+// }
 
 // <tr class="gameListItem">
 //     <td>Jill</td>
 //     <td>Smith</td>
 //     <td>50</td>
 // </tr>
-
-
-let lastTick: number = performance.now()
-function tick(nowish: number) { // local updates only
-    let delta: number = nowish - lastTick;
-    lastTick = nowish;
-
-    delta = Math.min(delta, 1000); // cap delta time to stop weird things happening when you alt tab
-
-    if (game.isHosting()) {
-        if (!gameHost) {
-            gameHost = new GameHost();
-            game.map = gameHost.map;
-            // gameHost.takePlayerInput(networking.id!, game.getInput()) // send input at start
-            setInterval(() => { game.sendInput() }, 1000/game.clientTickRate); // game on host machine sending input to gameHost
-            networking.setOnPeerLeave(gameHost.onPeerLeave);
-        }
-
-        gameHost.phyTick(delta);
-
-        game.update(delta);
-        game.render(ctx);
-    } else {
-        // phisUpdates = Math.ceil(delta/physRate)
-        if(networking.isReady() && game.players.length >= 1){
-            game.update(delta);
-            game.render(ctx);
-        }
-    }
-
-    window.requestAnimationFrame(tick);
-}
-
-window.requestAnimationFrame(tick)

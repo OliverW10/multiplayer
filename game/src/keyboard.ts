@@ -6,11 +6,13 @@ class Keyboard{
     */
 
     keys: { [index:string] : boolean } = {};
+    keysSince: { [index: string] : boolean } = {}
     pressedAnyKey: boolean = false; //initially false then true forever after any keypress
 
     constructor(){
         document.addEventListener('keydown', (event) => {
             this.keys[event.code] = true;
+            this.keysSince[event.code] = true;
             this.pressedAnyKey = true;
             // console.log(this.keys)
         });
@@ -24,6 +26,14 @@ class Keyboard{
         }else{
             return false; // key has never been pressed yet
         }
+    }
+    // checks if the key has been pressed since this was last called with that key
+    checkKeySince(key: string): boolean{
+        if(key in this.keysSince){
+            delete this.keysSince[key]
+            return true
+        }
+        return false
     }
 }
 

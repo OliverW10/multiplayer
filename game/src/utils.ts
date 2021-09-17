@@ -14,6 +14,8 @@ export function showText(ctx: CanvasRenderingContext2D, text: string, X: number,
     }
 }
 
+export type ScreenSize = Vector2 | HTMLCanvasElement;
+
 export class Vector2{
     x: number;
     y: number;
@@ -29,7 +31,7 @@ export class Vector2{
         return new Vector2(this.x/l, this.y/l)
     }
     
-    angleFrom(from=new Vector2(0, 0)): number{
+    angleFrom(from = new Vector2(0, 0)): number{
         return Math.atan2(this.y-from.x, this.x-from.y);
     }
     angleTo(to: Vector2): number{
@@ -41,6 +43,10 @@ export class Vector2{
 
     distanceTo(to:Vector2){
         return Math.sqrt((to.x-this.x)**2 + (to.y-this.y)**2)
+    }
+    // fast version dosent do sqrt if you only care about relative distance
+    distanceToF(to: Vector2){
+        return (to.x-this.x)**2 + (to.y-this.y)**2
     }
 
     // transforms a position from world corodinates to screen percentage
@@ -55,28 +61,39 @@ export class Vector2{
     viewToWorld(view: Rect): Vector2{
         return new Vector2(
             view.x+(this.x*view.w),
-            view.y+(this.y/view.h),
+            view.y+(this.y*view.h),
         )
     }
 
     // transform a screen position 0-1 to pixel cordinate
-    screenToPixel(canvas: HTMLCanvasElement): Vector2{
-        return new Vector2(scaleNumber(this.x, 0, 1, 0, canvas.width), scaleNumber(this.y, 0, 1, 0, canvas.height))
+    // size as vector2 or canvas
+    screenToPixel(size: ScreenSize): Vector2{
+        if(size instanceof Vector2){
+            return new Vector2(scaleNumber(this.x, 0, 1, 0, size.x), scaleNumber(this.y, 0, 1, 0, size.y))
+        }
+        if(size instanceof HTMLCanvasElement){ // size is actually a canvas element
+            return new Vector2(scaleNumber(this.x, 0, 1, 0, size.width), scaleNumber(this.y, 0, 1, 0, size.height))
+        }
     }
 
     // from screen pixels to screen percent
-    pixelToScreen(canvas: HTMLCanvasElement): Vector2{
-        return new Vector2(scaleNumber(this.x, 0, canvas.width, 0, 1), scaleNumber(this.y, 0, canvas.height, 0, 1))
+    pixelToScreen(size: ScreenSize): Vector2{
+        if(size instanceof Vector2){
+            return new Vector2(scaleNumber(this.x, 0, size.x, 0, 1), scaleNumber(this.y, 0, size.y, 0, 1))
+        }
+        if(size instanceof HTMLCanvasElement){
+            return new Vector2(scaleNumber(this.x, 0, size.width, 0, 1), scaleNumber(this.y, 0, size.width, 0, 1))
+        }
     }
 
     // from world to screen pixels
-    worldToPixel(view: Rect, canvas: HTMLCanvasElement): Vector2{
-        return this.worldToView(view).screenToPixel(canvas)
+    worldToPixel(view: Rect, size: ScreenSize): Vector2{
+        return this.worldToView(view).screenToPixel(size)
     }
 
     // from screen pixels to world codinates
-    pixelToWorld(view: Rect, canvas: HTMLCanvasElement): Vector2{
-        return this.pixelToScreen(canvas).viewToWorld(view)
+    pixelToWorld(view: Rect, size: ScreenSize): Vector2{
+        return this.pixelToScreen(size).viewToWorld(view)
     }
 
    
@@ -106,6 +123,10 @@ export class Vector2{
     // to prevent shallow copying
     copy(): Vector2{
         return new Vector2(this.x, this.y)
+    }
+
+    static fromObj(obj: {x: number, y: number}): Vector2{
+        return new Vector2(obj.x, obj.y);
     }
 }
 

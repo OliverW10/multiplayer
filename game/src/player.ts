@@ -2,7 +2,6 @@
 import { checkCollisions, findClosestPoint, World } from "./world";
 import { playerInputMessage } from "./networking";
 import { clamp, Rect, round, scaleNumber, showText, Vector2 } from "./utils";
-import { ctx, canvas } from "./index";
 
 
 export interface playerData{
@@ -42,6 +41,7 @@ export class Player {
     MAX_SPEED = 5;
     DRAG = 0.12;
     WALL_BOUNCE = 0.6;
+    SWING_COOLDOWN = 0.2;
 
     swingPos = new Vector2(0, 0);
     recentlySwung: Array<{ p: Vector2; t: number; }> = [];
@@ -50,9 +50,9 @@ export class Player {
     wasSwinging = false; // was swinging last frame
     wasNetSwinging = false; // was swinging last network tick
 
-    SWING_COOLDOWN = 0.2;
 
-    bulletPos: Vector2 = new Vector2(0, 0); // since each player can have max 1 bullet it dosent make sense to have a seperate class
+    // since each player can have max 1 bullet it dosent make sense to have a seperate class
+    bulletPos: Vector2 = new Vector2(0, 0);
     bulletAngle: number = 0;
     bulletAge: number = 0;
     bulletAlive: boolean = false; // most recent state of bullet
@@ -94,10 +94,11 @@ export class Player {
         return p
     }
 
-    render(camera: Rect) { 
-        const drawPos = this.pos.worldToPixel(camera, canvas)
+    render(ctx: CanvasRenderingContext2D, camera: Rect) { 
+        const screenSize = new Vector2(ctx.canvas.width, ctx.canvas.height)
+        const drawPos = this.pos.worldToPixel(camera, screenSize)
         if(this.swinging){
-            const swingDrawPos = this.swingPos.worldToPixel(camera, canvas);
+            const swingDrawPos = this.swingPos.worldToPixel(camera, screenSize);
             ctx.beginPath();
             ctx.strokeStyle = "rgba(0, 0, 0, 0.9)";
             ctx.lineWidth = 4;
@@ -132,7 +133,7 @@ export class Player {
 
         // bullet
         if(this.bulletAlive){
-            const bulletDrawPos = this.bulletPos.worldToPixel(camera, canvas);
+            const bulletDrawPos = this.bulletPos.worldToPixel(camera, screenSize);
             ctx.beginPath();
             ctx.fillStyle = "black";
             ctx.arc(bulletDrawPos.x, bulletDrawPos.y, 10, 0, Math.PI * 2);
@@ -190,7 +191,9 @@ export class Player {
             const clampPos = nextPos.normalize().times(this.swingDist)
             // update the speed
             const displacment = clampPos.minus(relPos) // amount moved this update
-            if(this.wasSwinging == false){ // only set speed on first update to prevent unintentional "drag" from rotation
+
+            // only set speed on first update to prevent unintentional "drag" from rotation
+            if(this.wasSwinging == false){
                 this.speed = displacment.length()/dts
             }
             // update the angle (maybe need change)
@@ -337,12 +340,12 @@ export class Player {
         this.inputX = clamp(msg.data.inputX, -1, 1);
         this.inputY = clamp(msg.data.inputY, -1, 1);
         this.lookAngle = msg.data.lookAngle;
-        if(msg.data.swinging){ 
+        if(msg.data.swingPos){ 
             if(!this.swinging){ // only if werent swinging last frame
                 console.log("set swinging")
-                const closest = this.findClosestHandle(map)
-                this.swingPos = closest.pos;
-                this.swingDist = closest.dist;
+                // const closest = this.findClosestHandle(map)
+                this.swingPos = Vector2.fromObj(msg.data.swingPos); // trusts clients for swing pos
+                this.swingDist = this.swingPos.distanceTo(this.pos);
                 this.swinging = true;
             }
         }else{
@@ -366,7 +369,7 @@ export class Player {
             if(msg.data.detonating){
                 if(this.bulletAlive){
                     this.bulletAlive = false;
-                    this.onCreateExplosion(this.bulletPos, this.id) // probrobly best to wait for comfirmation from server before showing effect
+                    this.onCreateExplosion(this.bulletPos, this.id)
                 }
             }
         }
@@ -395,8 +398,10 @@ export class Player {
         const diff = pos.minus(this.pos); // vector to get from player to pos
         const dist = scaleNumber(diff.length(), 0, size, 1, 0);
         if(diff.length() < size){
-            let newPos = this.pos.plus( diff.normalize().times( (-1) * dist * speed) ) // move player away from pos by dist * speed
-            newPos = newPos.plus(new Vector2(Math.cos(this.angle) * this.speed, Math.sin(this.angle) * this.speed)) // move player as noramlly                           
+            // move player away from pos by dist * speed
+            let newPos = this.pos.plus( diff.normalize().times( (-1) * dist * speed) )
+            // do player movement for 1s
+            newPos = newPos.plus(new Vector2(Math.cos(this.angle) * this.speed, Math.sin(this.angle) * this.speed))                         
             // work out new angle and speed
             this.angle = this.pos.angleTo(newPos);
             this.speed = this.pos.distanceTo(newPos);
@@ -404,9 +409,14 @@ export class Player {
             this.health -= dist*dmg;
             this.damageTime = 0;
             if(this.health < 0){
-                // overrides this with a new random player
-                Object.assign(this, Player.newRandom(this.id, this.onCreateExplosion));
+                this.reset();
             }
         }
+    }
+
+    public reset(){
+        // overrides this with a new random player
+        Object.assign(this, Player.newRandom(this.id, this.onCreateExplosion));
+
     }
 }
