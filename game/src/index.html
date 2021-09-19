@@ -16,58 +16,8 @@
 		}
 
 		/* all children on ui */
-		#ui > *{ 
-			position: fixed;
-			z-index: 2;
-			left: 0;
-			top: 0;
-		}
-		#gameListOuter{
-			position: fixed;
-			top: 50%;
-			left: 50%;
-			transform: translate(-50%, -50%);
-			background-color: #aaa;
-			padding: 3vw;
-			height: 50vh;
-			width: 50vw;
-			transition: transform 2s;
-			opacity: 0.9;
-			border-radius: 0.5vw;
-			box-shadow: 2px 5px 20px -1px #000;
-			border: 2px #333 solid;
-		}
-		#gameList{
-			width: 100%;
-			height: auto;
-			max-height: 100%;
-			top: 0px;
-			background-color: #ccc;
-			text-align: center;
-			overflow-x: scroll;
-		}
-		tr{
-			height: 20px;
-			border: 1px solid black;
-		}
-		th{background-color: #ddd;}
-		tr:hover{
-			background-color: #aaa;
-		}
-		tr:active{
-			background-color: #999;
-		}
-		td{
-			-webkit-touch-callout: none; /* iOS Safari */
-			-webkit-user-select: none; /* Safari */
-			-khtml-user-select: none; /* Konqueror HTML */
-			-moz-user-select: none; /* Old versions of Firefox */
-			-ms-user-select: none; /* Internet Explorer/Edge */
-            user-select: none; /* Non-prefixed version, currently
-                                  supported by Chrome, Edge, Opera and Firefox */
-		}
-		#testButton{
-			display: none;
+		#uiOuter { 
+			display: flex;
 		}
 	</style>
 </head>

@@ -6,7 +6,7 @@ import { showText, Vector2, Rect, round, getLineRect, scaleNumber } from "./util
 import { GameHost } from "./host";
 import { Explosion } from "./particle";
 import { generateMap } from "./world";
-import { UiMessageType } from ".";
+import { UiMessage, UiMessageTypes } from ".";
 
 
 // Handles rendering, player input, movement prediction
@@ -37,9 +37,9 @@ export class Game {
     shooting = false;
     detonating = false;
 
-    uiCallback: (msgType: UiMessageType, data?: any)=>void;
+    uiCallback: (msgType: UiMessage, data?: any)=>void;
 
-    constructor(uiCallback: (mesType: UiMessageType, data?: any)=>void) {
+    constructor(uiCallback: (mesType: UiMessage)=>void) {
         this.players = [];
         this.uiCallback = uiCallback;
 
@@ -404,7 +404,7 @@ export class Game {
             if(networking.id && id !== networking.id){
                 networking.joinGame(id);
                 // gamesListOuter!.style.transform = "translate(-50%, -200%)";
-                this.uiCallback(UiMessageType.hideGamesList);
+                this.uiCallback({type: UiMessageTypes.hideGamesList});
 
                 this.sendInput = this.sendInput.bind(this);
                 networking.setOnNewPeer(()=>{ // when the connection has been created start sending packets
@@ -462,7 +462,10 @@ export class Game {
         return obj
     }
     refreshGamesList() {
-        let updateGamesList = (list)=>this.uiCallback(UiMessageType.setGameList, list);
+        let updateGamesList = (list)=>{
+            const gamesObjs = list.map(x=>{});
+            this.uiCallback({type: UiMessageTypes.setGames, data:gamesObjs}, list);
+        }
         updateGamesList = updateGamesList.bind(this);
 
         networking.getGames(updateGamesList);
@@ -471,12 +474,6 @@ export class Game {
     isHosting() {
         return networking.hosting
     }
-}
-
-
-// creates game objects and starts main game loop
-function main(c: CanvasRenderingContext2D){
-    
 }
 
 // export let gamesListOuter = document.getElementById("gameListOuter")

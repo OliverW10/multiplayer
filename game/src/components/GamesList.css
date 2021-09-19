@@ -1,0 +1,28 @@
+#gameListOuter{
+    height: 50vh;
+    width: 40vw;
+}
+#gameList{
+    height: auto;
+    max-height: 100%;
+    background-color: #ccc;
+    text-align: center;
+    overflow-x: scroll;
+}
+table{
+    width: 100%;
+}
+thead{
+    width: 100%;
+}
+tr{
+    height: 20px;
+    border: 1px solid black;
+}
+th{background-color: #ddd;}
+tr:hover{
+    background-color: #aaa;
+}
+tr:active{
+    background-color: #999;
+}

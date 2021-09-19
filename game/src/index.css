@@ -1,0 +1,46 @@
+
+
+#uiOuter{
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#loader{
+    width:100vw;
+    height: 100vh;
+    position: fixed;
+    background-color: black;
+    display: flex;
+    align-items: center;
+    align-content: center;
+    opacity: 1;
+    transition: opacity 0.5s;
+    z-index: 3;
+}
+
+.hide{
+    opacity: 0 !important;
+}
+
+.box{
+    background-color: #aaa;
+    padding: 3vw;
+    border-radius: 0.5vw;
+    box-shadow: 2px 5px 20px -1px #000;
+    border: 2px #333 solid;
+    opacity: 0.9;
+    margin: 13px;
+}
+
+.noselect{
+    -webkit-touch-callout: none; /* iOS Safari */
+    -webkit-user-select: none; /* Safari */
+    -khtml-user-select: none; /* Konqueror HTML */
+    -moz-user-select: none; /* Old versions of Firefox */
+    -ms-user-select: none; /* Internet Explorer/Edge */
+    user-select: none; /* Non-prefixed version, currently
+                          supported by Chrome, Edge, Opera and Firefox */
+}

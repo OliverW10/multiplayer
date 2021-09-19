@@ -1,0 +1,21 @@
+#gameCreatorOuter{
+    height: 50vh;
+    width: 20vw;
+    transition: transform 2s;    
+}
+#gameList{
+    width: 100%;
+    height: auto;
+    max-height: 100%;
+    top: 0px;
+    background-color: #ccc;
+    text-align: center;
+    overflow-x: scroll;
+}
+#nameSpan{
+    display: inline-flex;
+}
+#gameNameInput{
+    min-width: 50px;
+    padding: 0;
+}

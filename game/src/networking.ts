@@ -1,6 +1,7 @@
 // https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking
 // https://raymondgh.github.io/webrtc.html
 
+import { gameType } from ".";
 import { Game } from "./game";
 import { playerData } from "./player";
 import { Vector2 } from "./utils";
@@ -46,6 +47,14 @@ export interface pong {
 }
 
 export type peerInterface = mapMessage | playerInputMessage | playerStateMessage | pong;
+
+export interface gameInfo{
+    id: number;
+    name: string;
+    players: number;
+    slots?: number;
+    mode: gameType;
+}
 
 
 interface RTCDataSignal {
