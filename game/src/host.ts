@@ -1,3 +1,4 @@
+import { UiMessage } from ".";
 import { Game } from "./game";
 import { networking, peerInterface, playerInputMessage, playerStateMessage, pong } from "./networking";
 import { Player } from "./player";
@@ -12,28 +13,42 @@ enum gameState{
 // only runs on the host, handles phisics, hitreg, game events
 // authorative on everything
 export class GameHost {
-    static tickrate = 30;
-    tickrate = GameHost.tickrate;
+    static netTickrate = 30;
+    static physTickrate = 60;
+
+    netTickrate = GameHost.netTickrate;
+    physickrate = GameHost.physTickrate;
+
     tickNum = 0;
     tickTimes: Array<{num: number, time: number}> = [];
-    mapSeed = myRandom(9999, 999999);
+    mapSeed = round(myRandom(9999, 999999));
     map: World = generateMap(this.mapSeed)
     players: Array<Player> = [];
     createExplosion: (pos: Vector2, fromId: number)=>void;
 
     // game length fixed for now at 5 mins
     static GAME_LENGTH_S = 5*60
-    static GAME_LENGTH_T = GameHost.GAME_LENGTH_S*GameHost.tickrate; // ticks per game
+    static GAME_LENGTH_T = GameHost.GAME_LENGTH_S*GameHost.netTickrate; // ticks per game
     state = gameState.playing;
 
-    constructor() {
+    uiCallback: (msgType: UiMessage, data?: any)=>void;
+
+    netInterval: number;
+    physInterval: number;
+    lastPhysTick = performance.now()
+    running = true;
+
+    constructor(uiCallback: (mesType: UiMessage)=>void) {
+        this.uiCallback = uiCallback;
         // override networkings callbacks
+        networking.rtcSendObj({ type: "world-data", data: this.mapSeed }, -1); // give the new client the map
         networking.setOnNewPeer(id => {
             console.log("sending new client the map")
             networking.rtcSendObj({ type: "world-data", data: this.mapSeed }, id); // give the new client the map
         })
 
-        setInterval(() => { this.netTick() }, 1000 / this.tickrate) // set tick interval to send to clients
+        this.netInterval = window.setInterval(() => { this.netTick() }, 1000 / this.netTickrate) // set tick interval to send to clients
+        this.physInterval = window.setInterval(()=> { this.phyTick() }, 1000 / this.physickrate)
         // console.log("sending initial clients the map")
         // networking.rtcSendObj({ type: "world-data", data: this.map })
         console.log("created game host")
@@ -50,6 +65,13 @@ export class GameHost {
         } ).bind(this);
 
         this.onPeerLeave = this.onPeerLeave.bind(this);
+        this.onPeerMsg = this.onPeerMsg.bind(this)
+    }
+
+    stopHosting(){
+        this.running = false;
+        window.clearInterval(this.physInterval);
+        window.clearInterval(this.netInterval);
     }
 
     onPeerMsg(msg: peerInterface, id: number) {
@@ -70,6 +92,8 @@ export class GameHost {
     }
 
     netTick() {
+        // console.log("net tick")
+        // console.log(this.players)
         this.tickNum += 1;
         if(this.tickNum > GameHost.GAME_LENGTH_T){
             this.reset();
@@ -86,13 +110,25 @@ export class GameHost {
         }
     }
 
-    phyTick(dt: number) {
-        // phsics update happens more often than network tick
-        // is called from main animation loop
+    phyTick(dt?: number) {
+        // phsics tick happens independantly of the network tick
+        // if no dt is given it will work its own one out
+        if(!dt){
+            let now = performance.now();
 
-        for (let player of this.players) {
-            player.update(dt, this.map, true)
+            const dt = Math.min(1000, now-this.lastPhysTick); // caps dt at 1 second
+            for (let player of this.players) {
+                player.update(dt, this.map, true)
+            }
+
+            this.lastPhysTick = now;
+
+        }else{
+            for (let player of this.players) {
+                player.update(dt, this.map, true)
+            }
         }
+        
     }
 
     // decides what data to send to the given player

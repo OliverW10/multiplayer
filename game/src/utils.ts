@@ -263,3 +263,49 @@ export class Colour{
         return `hsla(${this.a}, ${this.b}, ${this.c}, ${this.alpha})`
     }
 }
+
+export class PRandom{
+    // impliments
+    // https://en.wikipedia.org/wiki/Linear_congruential_generator
+    m: number; // modulo
+    a: number; // multiplier
+    c: number; // constant
+    x: number; // seed
+    constructor(seed: number, m=2**16 + 1, a=75, c=74){
+        if(m <= 0){ throw "bad m" };
+        if(a <= 0 || a >= m){ throw "bad a" };
+        if(c < 0 || c >= m){ throw "bad c" };
+
+        this.x = seed;
+        this.m = m;
+        this.a = a;
+        this.c = c;
+    }
+    /**
+     * gets the next value without advancing
+     * @returns a random number from 0 to this.m
+     */
+    get(){
+        return (this.a*this.x+this.c) % this.m;
+    }
+    /**
+     * steps the generator and returns the result
+     * @returns a random number from 0 to this.m
+     */
+    step(){
+        this.x = this.get();
+        return this.x;
+    }
+    /**
+     * steps the generator and gives a integer in the given range
+     * @param min minimum, inclusive
+     * @param max maxiumum, exclusive
+     */
+    integer(min: number, max: number){
+        return scaleNumber(this.step(), 0, this.m, min, max, true);
+    }
+}
+
+export function isNumeric(num: any){
+    return !isNaN(num)
+}

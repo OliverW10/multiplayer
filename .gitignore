@@ -5,3 +5,7 @@ game/public/*.js
 dist/
 .public/
 .parcel-cache/
+lib.js
+.gitignore
+deploy/
+parcel-bundle-reports/

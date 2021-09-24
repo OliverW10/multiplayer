@@ -1,28 +1,33 @@
 #gameListOuter{
     height: 50vh;
     width: 40vw;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 }
 #gameList{
     height: auto;
     max-height: 100%;
     background-color: #ccc;
     text-align: center;
-    overflow-x: scroll;
+    overflow: scroll;
 }
 table{
     width: 100%;
 }
-thead{
-    width: 100%;
+th{
+    background-color: #ddd;
 }
-tr{
-    height: 20px;
-    border: 1px solid black;
+tbody > *{
+    background-color: #bbb; 
 }
-th{background-color: #ddd;}
-tr:hover{
-    background-color: #aaa;
+tbody > *:hover{
+    filter: brightness(110%); 
 }
-tr:active{
-    background-color: #999;
+#idJoinSpan{
+    float: right;
 }
+/* #gameListBottom{
+    position: absolute;
+    bottom: 1em;
+} */

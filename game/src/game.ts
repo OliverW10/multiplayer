@@ -45,6 +45,9 @@ export class Game {
 
         this.createExplosion = this.createExplosion.bind(this);
         this.onPeerMsg = this.onPeerMsg.bind(this);
+        this.sendInput = this.sendInput.bind(this);
+
+        console.log("created game")
     }
 
     createExplosion(pos: Vector2, fromId: number){
@@ -96,7 +99,7 @@ export class Game {
                 }
                 this.timeout = 0;
                 // corrects timer
-                this.age = message.frame/GameHost.tickrate; // age in seconds (tick number / tick rate)
+                this.age = message.frame/GameHost.netTickrate; // age in seconds (tick number / tick rate)
         }
     }
 
@@ -396,28 +399,8 @@ export class Game {
         this.framerate = 1 / (this.frametimes.reduce((a, b) => a + b) / (1000 * this.frametimes.length));
     }
     joinRandomGame() {
-        let possibleGames = networking.gamesList.filter(x => x != networking.id)
-        networking.joinGame(possibleGames[0])
-    }
-    joinGame(id: number) {
-        if (networking.gamesList.some(x => x == id)) { // if we know the game exists
-            if(networking.id && id !== networking.id){
-                networking.joinGame(id);
-                // gamesListOuter!.style.transform = "translate(-50%, -200%)";
-                this.uiCallback({type: UiMessageTypes.hideGamesList});
-
-                this.sendInput = this.sendInput.bind(this);
-                networking.setOnNewPeer(()=>{ // when the connection has been created start sending packets
-                    console.log("set sendinput callback")
-                    setInterval(this.sendInput, 1000/this.clientTickRate);
-                });
-                this.sendInput(); // send input back after the tick
-            }else{
-                console.log("tried to join our own game");
-            }
-        } else {
-            console.log("game dosent exist");
-        }
+        // let possibleGames = networking.gamesList.filter(x => x != networking.id)
+        // networking.joinGame(possibleGames[0])
     }
 
     // send the server info for this client
@@ -425,7 +408,7 @@ export class Game {
     // also used on host beacuse -2 routes host traffic directly
     sendInput() {
         if (networking.isReady()) { // tests if peer is ready
-            networking.rtcSendObj(this.getInput(), -2);
+            networking.rtcSendObj(this.getInput(true), -2);
         } else {
             console.log("isnt ready")
             console.log(networking.peers, networking.peers.map(x=>`${x.peerConnection.connectionState}  ${x.peerConnection.iceConnectionState}`))
@@ -475,66 +458,3 @@ export class Game {
         return networking.hosting
     }
 }
-
-// export let gamesListOuter = document.getElementById("gameListOuter")
-// document.getElementById("refreshButton")!.onclick = () => { game.refreshGamesList() }
-// document.getElementById("testButton")!.onclick = () => { networking.rtcSendString("this is working YAY!"); console.log("send data") }
-// let gameButton = document.getElementById("gameButton");
-// if (gameButton) {
-//     gameButton.onclick = () => {
-//         let x = networking.toggleVis();
-//         gameButton!.innerHTML = x ? "toggle game visability [x]" : "toggle game visability [ ]";
-//     }
-// } else { console.log("game button didnt exist") }
-
-// const wsConneectingMsg = document.getElementById("connectingMsg");
-// networking.onServerOpen = ()=>{
-//     wsConneectingMsg!.style.display = "none";
-// }
-
-// function createGameList(list: Array<number>, ourId: number) {
-//     // first clear previouse list
-//     let prevItems = document.querySelectorAll(".gameListItem")
-//     console.log(prevItems)
-//     if (prevItems) {
-//         for (var idx = 0; idx < prevItems.length; idx++) {
-//             let item = prevItems[idx];
-//             item.remove();
-//         }
-//     }
-//     for (let id of list) {
-//         if(!id){break} // for some reason sometimes id is null
-//         let trNode = document.createElement("tr");
-//         trNode.classList.add("gameListItem");
-
-//         let nameNode = document.createElement("td");
-//         if (id == ourId) {
-//             var nameText = document.createTextNode("exampleName (you)");
-//         } else {
-//             var nameText = document.createTextNode("exampleName");
-//         }
-//         nameNode.appendChild(nameText);
-
-//         let idNode = document.createElement("td");
-//         let idText = document.createTextNode(id.toString());
-//         idNode.appendChild(idText);
-
-//         let playersNode = document.createElement("td");
-//         let playersText = document.createTextNode("exampleName");
-//         playersNode.appendChild(playersText);
-
-//         trNode.appendChild(nameNode);
-//         trNode.appendChild(idNode);
-//         trNode.appendChild(playersNode);
-
-//         trNode.onclick = () => { game.joinGame(id) }
-
-//         document.getElementById("gameList")?.appendChild(trNode);
-//     }
-// }
-
-// <tr class="gameListItem">
-//     <td>Jill</td>
-//     <td>Smith</td>
-//     <td>50</td>
-// </tr>

@@ -15,11 +15,18 @@
     background-color: black;
     display: flex;
     align-items: center;
-    align-content: center;
+    justify-content: center;
     opacity: 1;
     transition: opacity 0.5s;
     z-index: 3;
+    font-size: 100px;
+    color: white;
+    text-align: center;
+
 }
+
+/* #loader > *{
+} */
 
 .hide{
     opacity: 0 !important;

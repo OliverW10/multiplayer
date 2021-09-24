@@ -1,6 +1,4 @@
-import { Random, MersenneTwister19937 } from "random-js";
-import { getLineRect, Line, round, Vector2 } from "./utils";
-
+import { getLineRect, Line, PRandom, round, Vector2 } from "./utils";
 
 export type World = Array<Line>
 
@@ -66,7 +64,7 @@ const MAX_LINE_LENGTH = 5;
 export function generateMap(seed: number, size = 15, density = 0.15): World {
     let lines: World = []
     console.log(`map seed ${seed}`)
-    const random = new Random(MersenneTwister19937.seed(seed));
+    const random = new PRandom(seed);
     // create random lines
     for (let i = 0; i < (size ** 2) * density; i++) {
         let x1 = random.integer(0, size)

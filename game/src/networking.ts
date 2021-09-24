@@ -1,8 +1,7 @@
 // https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking
 // https://raymondgh.github.io/webrtc.html
 
-import { gameType } from ".";
-import { Game } from "./game";
+import { gameType, UiMessage, UiMessageTypes } from ".";
 import { playerData } from "./player";
 import { Vector2 } from "./utils";
 
@@ -243,15 +242,16 @@ class Networking {
     socket: WebSocket;
     peers: Array<Peer> = []; // a host peer will have every peer in the game but a client will only connect to the host
     id?: number;
-    gamesList: Array<number> = [];
+    gamesList: Array<gameInfo> = [];
 
     // intended to be overridden
-    onGameList: (list: Array<number>) => void;
+    onGameList: (list: Array<gameInfo>) => void;
     onPeerMsg: (message: peerInterface, id: number) => void = (x) => { }; // is game onMessage when a client and gameHosts onmessage when host
     onHostClientMsg: (message: peerInterface, id: number) => void = (x) => { }; // for host sending message to its local client
     onNewPeer: (id: number) => void = (x) => { };
     onPeerLeave: (id: number) => void = (x) => { };
     onServerOpen: () => void = () => { };
+    uiCallback: (msgType: UiMessage, data?: any)=>void = (e)=>{};
     visable: boolean = false;
     hosting: boolean = false; // wether we are the host of the game
     connected: boolean = false; // in a game rn
@@ -279,8 +279,12 @@ class Networking {
                 console.log(`got id: ${this.id}`)
                 this.wsSend("list-games")
             }
-            if (msgObj.type == "games-list") {
-                this.gamesList = msgObj.data;
+            if (msgObj.type == "games-list") 
+            {
+                const createGameObj = (id: number): gameInfo=>{
+                    return {id: id, name: "test", players:0, mode:gameType.pvp}
+                }
+                this.gamesList = msgObj.data.map(createGameObj);
                 console.log(`got games list: ${this.gamesList}`)
                 this.onGameList(this.gamesList);
             }
@@ -336,6 +340,10 @@ class Networking {
         for (let p of this.peers) {
             p.leaveCallback = this.onPeerLeaveWrapper;
         }
+    }
+
+    public setUiMessage(uiCallback: (msgType: UiMessage, data?: any)=>void){
+        this.uiCallback = uiCallback;
     }
 
     onPeerLeaveWrapper(id: number) {
@@ -397,14 +405,24 @@ class Networking {
         }
     }
 
-    // to create a p2p connection to gameId
+    // tries to create a p2p connection to gameId
     public joinGame(gameId: number): void {
-        // clears previos connections
+        console.log(`trying to join game ${gameId}`)
+        if(!this.gamesList.some((info=>info.id===gameId))){
+            console.log("joining private game"); // allows this
+        }
+        if(gameId === this.id){
+            throw "Tried to join ourselves"
+        }
+        if(!this.id){
+            throw "Tried to join before getting our id"
+        }
+        // clears previous connections
         this.peers = [];
         // sends initial RTC data-offer message to connect
-        if (!this.id) { console.log("tried to join a game before getting id"); return }
         this.hosting = false;
-        this.visable = false;
+        this.uiCallback({ type: UiMessageTypes.setHosting, data: false })
+        this.setVis(false);
         let curRemote = this.remoteFromId(gameId); //creates a new peer
         curRemote.createDataOffer()
     }
@@ -441,7 +459,8 @@ class Networking {
             if(target !== -2){
                 throw "Client should only be sending to host"
             }
-            if(this.peers.length){
+            if(this.peers.length === 1){
+                console.log("sending from client")
                 this.peers[0].sendString(data)
             }
         }
@@ -458,7 +477,7 @@ class Networking {
         this.rtcSendString(JSON.stringify(data), target)
     }
 
-    public getGames(callback: (list: Array<number>) => void) {
+    public getGames(callback: (list: Array<gameInfo>) => void) {
         this.wsSend("list-games")
         this.onGameList = callback;
     }

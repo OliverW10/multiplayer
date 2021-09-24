@@ -12,6 +12,7 @@ export interface gameSettings{
 
 interface CreatorProps{
     show: boolean;
+    id: number;
     settings: gameSettings;
     setPublic: (to: boolean)=>void;
     setName: (to: string)=>void;
@@ -33,6 +34,7 @@ export const GameCreator: React.FC<CreatorProps> = (props)=>{
                     <input type="text" id="gameNameInput" name="gameName" value={nameText} onChange={handleNameInput}></input>
                     <button onClick={()=>props.setName(nameText)}>Set</button>
                 </span>
+                <p>Your id: {props.id}</p>
             </div>
         )
     }
