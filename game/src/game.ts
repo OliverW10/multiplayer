@@ -94,8 +94,9 @@ export class Game {
                         curIds = this.players.map(x => x.id)
                     }
                 }
+                // do the pong
                 if(Math.random()>0.98){
-                    networking.rtcSendObj({type:"pong", frame: message.frame});
+                    networking.rtcSendObj({type:"pong", frame: message.frame}, -2);
                 }
                 this.timeout = 0;
                 // corrects timer

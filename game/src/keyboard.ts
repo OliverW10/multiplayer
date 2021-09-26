@@ -8,13 +8,22 @@ class Keyboard{
     keys: { [index:string] : boolean } = {};
     keysSince: { [index: string] : boolean } = {}
     pressedAnyKey: boolean = false; //initially false then true forever after any keypress
+    callbacks: { [index:string]: Array<Function> } = {}
 
     constructor(){
         document.addEventListener('keydown', (event) => {
-            this.keys[event.code] = true;
-            this.keysSince[event.code] = true;
-            this.pressedAnyKey = true;
-            // console.log(this.keys)
+            // checks if the key state has changed beacuse firefox does key repeating
+            if(this.keys[event.code] !== true){ // undefined of false
+                this.keys[event.code] = true;
+                this.keysSince[event.code] = true;
+                this.pressedAnyKey = true;
+                if(event.code in this.callbacks){
+                    for(let fn of this.callbacks[event.code]){
+                        fn();
+                    }
+                }
+                console.log(this.keys)
+            }
         });
         document.addEventListener('keyup', (event) => {
             this.keys[event.code] = false;
@@ -34,6 +43,14 @@ class Keyboard{
             return true
         }
         return false
+    }
+    addCallback(onKey: string, fn: Function){
+        if(onKey in this.callbacks){
+            this.callbacks[onKey].push(fn);
+        }else{
+            this.callbacks[onKey] = [fn];
+        }
+        console.log(this.callbacks)
     }
 }
 

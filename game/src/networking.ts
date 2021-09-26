@@ -323,9 +323,6 @@ class Networking {
     }
     public setOnHostClientMsg(func: (msg: peerInterface, id: number) => void) {
         this.onHostClientMsg = func;
-        for (let p of this.peers) {
-            p.onPeerMsg = func;
-        }
     }
 
     public setOnNewPeer(func: (id: number) => void): void {

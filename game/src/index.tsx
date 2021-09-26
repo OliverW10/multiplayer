@@ -44,21 +44,21 @@ interface genericUiMsg{
     type: UiMessageTypes;
     data?: any;
 }
-interface setGamesMsg{
-    type: UiMessageTypes.setGames;
-    data: Array<gameInfo>;
-}
+// interface setGamesMsg{
+//     type: UiMessageTypes.setGames;
+//     data: Array<gameInfo>;
+// }
 
-interface setPlayingMsg {
-    type: UiMessageTypes.setPlaying;
-    data: boolean;
-}
-interface setHostingMsg {
-    type: UiMessageTypes.setHosting;
-    data: boolean;
-}
+// interface setPlayingMsg {
+//     type: UiMessageTypes.setPlaying;
+//     data: boolean;
+// }
+// interface setHostingMsg {
+//     type: UiMessageTypes.setHosting;
+//     data: boolean;
+// }
 
-export type UiMessage = genericUiMsg | setGamesMsg | setPlayingMsg | setHostingMsg;
+export type UiMessage = genericUiMsg// | setGamesMsg | setPlayingMsg | setHostingMsg;
 
 export enum gameType{
     pvp="PvP",
@@ -77,7 +77,8 @@ export const App: React.FC = (props) => {
             name: "Default game",
             mode: gameType.pvp,
             slots: 99,
-        } as gameSettings)
+        } as gameSettings
+    )
 
     // recive a message from a lower level component (e.g. the game)
     // to change some other part of the ui
@@ -93,6 +94,8 @@ export const App: React.FC = (props) => {
     networking.onServerOpen = ()=>{
         setShowLoader(false)
     }
+
+    // run only initially
     React.useEffect(()=>{
         // default on new peer wait for someone to join and then sets us as the host
         networking.setOnNewPeer(()=>{
@@ -102,6 +105,19 @@ export const App: React.FC = (props) => {
             }
         })
     }, []); // only runs on mount
+
+    // run every time component is updated
+    // if it only runs on mount a closure is created and showGamesList is not updated
+    React.useEffect(()=>{
+        let escCallback = (e)=>{
+            if(e.code === "Escape"){
+                console.log(`toggled game list ${showGamesList} ${setShowGameList}`);
+                setShowGameList( (!showGamesList) )
+            }
+        }
+        document.addEventListener("keydown", escCallback)
+        return ( ()=>{document.removeEventListener("keydown", escCallback)} )
+    })
 
     type gameSettingKeys = keyof gameSettings;
     const setSetting = (which: string, to: any) => {

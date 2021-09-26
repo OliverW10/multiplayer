@@ -19,33 +19,37 @@ function GamesList(props: gameListProps){
         }
     }
 
-    return (
-        <div id="gameListOuter" className="box">
-            <table id="gamesList">
-                <thead>
-                    <tr className="gamesListItem highlight">
-                        <th>Id</th>
-                        <th>Game Name</th>
-                        <th>Mode</th>
-                        <th>Players</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {props.games.map(game=>{
-                        return <GameListItem  key={game.id} {...game} join={props.joinGame}/>
-                    })}
-                </tbody>
-            </table>
-            <div id="gameListBottom">
-                <button onClick={props.refresh}>Refresh</button>
-                <span id="idJoinSpan">
-                    <label htmlFor="idJoin">Join by id: </label>
-                    <input type="text" id="idJoinInput" name="idJoin" value={idText} onChange={handleOnChange}></input>
-                    <button onClick={()=>props.joinGame(Number(idText))}>Join</button>
-                </span>
+    if(props.show){
+        return (
+            <div id="gameListOuter" className="box">
+                <table id="gamesList">
+                    <thead>
+                        <tr className="gamesListItem highlight">
+                            <th>Id</th>
+                            <th>Game Name</th>
+                            <th>Mode</th>
+                            <th>Players</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {props.games.map(game=>{
+                            return <GameListItem  key={game.id} {...game} join={props.joinGame}/>
+                        })}
+                    </tbody>
+                </table>
+                <div id="gameListBottom">
+                    <button onClick={props.refresh}>Refresh</button>
+                    <span id="idJoinSpan">
+                        <label htmlFor="idJoin">Join by id: </label>
+                        <input type="text" id="idJoinInput" name="idJoin" value={idText} onChange={handleOnChange}></input>
+                        <button onClick={()=>props.joinGame(Number(idText))}>Join</button>
+                    </span>
+                </div>
             </div>
-        </div>
-    )
+        )
+    }else{
+        return null;
+    }
 }
 
 interface GameListItemProps extends gameInfo{
