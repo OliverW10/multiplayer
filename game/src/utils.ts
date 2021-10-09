@@ -82,7 +82,7 @@ export class Vector2{
             return new Vector2(scaleNumber(this.x, 0, size.x, 0, 1), scaleNumber(this.y, 0, size.y, 0, 1))
         }
         if(size instanceof HTMLCanvasElement){
-            return new Vector2(scaleNumber(this.x, 0, size.width, 0, 1), scaleNumber(this.y, 0, size.width, 0, 1))
+            return new Vector2(scaleNumber(this.x, 0, size.width, 0, 1), scaleNumber(this.y, 0, size.height, 0, 1))
         }
     }
 
@@ -192,10 +192,14 @@ export class Rect{
 }
 
 // scales a number from range x1-x2 to range z1-z2
-export function scaleNumber(n: number, x1: number, x2: number, z1: number, z2: number, doClamp = false): number{
+export function scaleNumber(n: number, x1: number, x2: number, z1: number, z2: number, doClamp = false, doWrap = false): number{
 	var range1 = x2-x1;
 	var range2 = z2-z1;
-	var ratio = (n - x1) / range1
+    if(doWrap){
+        var ratio = ((n - x1) / range1)%1
+    }else{
+        var ratio = (n - x1) / range1
+    }
     var result = ratio * range2 + z1
     if(doClamp){
     	return clamp(result, z1, z2);
@@ -213,7 +217,7 @@ export function round(n: number, to=0){
     let power = 10**to;
     return Math.round(n*power)/power;
 }
-export function myRandom(min: number, max: number): number{
+export function randRange(min: number, max: number): number{
     return Math.random()*(max-min)+min;
 }
 
@@ -301,8 +305,16 @@ export class PRandom{
      * @param min minimum, inclusive
      * @param max maxiumum, exclusive
      */
-    integer(min: number, max: number){
+    float(min: number, max: number){
         return scaleNumber(this.step(), 0, this.m, min, max, true);
+    }
+    /**
+     * steps the generator and gives a integer in the given range
+     * @param min minimum, inclusive
+     * @param max maxiumum, exclusive
+     */
+    integer(min: number, max: number){
+        return round(scaleNumber(this.step(), 0, this.m, min, max, true, true));
     }
 }
 

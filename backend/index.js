@@ -46,28 +46,43 @@ class Client {
     this.id = id;
     this.lastPing = Date.now();
     this.public = false;
+    this.name = "gameName";
+    this.playerNum = 1;
+    this.gameMode = "pvp";
   }
   send(messageObj) {
     this.socket.send(JSON.stringify(messageObj));
   }
-  alive(timeoutMax = 5000) {
+  alive(timeoutMax = 10000) {
     return this.lastPing > Date.now() - timeoutMax;
   }
-  close() {}
+  getObj(){
+    return {
+      id: this.id,
+      name: this.name,
+      players: this.playerNum,
+      mode: this.gameMode,
+    }
+  }
 }
 
+// generates random number [min, max)
+function randRange(min, max){
+    return Math.floor(Math.random()*(max-min)+min);
+}
+
+const ID_BASE = 10;
 let clients = [];
-const randomId = (size = 3) =>
-  Math.floor(
-    Math.random() * (10 ** size - 10 ** (size - 1)) + 10 ** (size - 1)
-  );
-function getNewClientId(size = 3) {
+// size in hex
+function getNewClientId(size=3) {
+  max = ID_BASE**(size+1) -1;
+  min = ID_BASE**size;
   let n = 0;
-  let id = randomId(size); // random number thats size digits long
+  let id = randRange(min, max); // random number thats size digits long
   while (clients.some((x) => x.id === id)) {
-    id = randomId; // random number thats size digits long
+    id = randRange(min, max); // random number thats size digits long
     n++;
-    if (n > 10 ** (size + 1)) {
+    if (n > max*5) {
       console.log("out of ids or really unlucky");
       return -2;
     }
@@ -91,6 +106,11 @@ function getClientFromWs(ws) {
   console.log(`couldnt find client ${ws} in ${clients}`);
 }
 
+function getGamesList(){
+  let pubClients = clients.filter((c) => c.public);
+  return pubClients.map((c) => c.getObj())
+}
+
 // when a new client connects
 function onConnect(ws) {
   // create a client class for them to hold their socket
@@ -102,13 +122,14 @@ function onConnect(ws) {
     try {
       var messageObj = JSON.parse(message.toString());
     } catch {
-      console.log(`!!!!!!!!!!! ^^ that wasnt json !!!!!!!!!!!!!!!`);
+      console.log(`!!!!!!!!!!! didnt get json !!!!!!!!!!!!!!!`);
       return;
     }
     if (messageObj.type != "ping") {
       console.log(`message recived: ${message.toString()}`);
     }
 
+    // "get-id" | "list-games" | "set-game-vis" | "rtc-signal" | "ping" | "set_name" | "set_players"
     switch (messageObj.type) {
       case "get-id":
         console.log(`got id ${JSON.stringify({ id: getClientFromWs(ws).id })}`);
@@ -117,15 +138,15 @@ function onConnect(ws) {
         );
         break;
       case "list-games":
-        let pubClients = clients.filter((c) => c.public);
-        ws.send(
-          JSON.stringify({
+        ws.send( JSON.stringify({
             type: "games-list",
-            data: pubClients.map((c) => c.id),
-          })
-        );
+            data: getGamesList()
+        }));
         break;
       case "rtc-signal": // routes the message to the correct id
+      case "passthrough":
+      case "passthrough-signal":
+        // code runs for both cases
         let destId = messageObj.data.dst;
         let destClient = getClientFromId(destId);
         if (destClient) {
@@ -146,8 +167,34 @@ function onConnect(ws) {
           ws.send(JSON.stringify({ type: "give-id", data: newId }));
         }
         break;
-      case "change-game":
+      case "set-game-vis":
         getClientFromWs(ws).public = messageObj.data;
+        ws.send( JSON.stringify({
+            type: "games-list",
+            data: getGamesList()
+        }));
+        break;
+      case "set-name":
+        getClientFromWs(ws).name = messageObj.data;
+        ws.send( JSON.stringify({
+            type: "games-list",
+            data: getGamesList()
+        }));
+        break;
+      case "set-name":
+        getClientFromWs(ws).playerNum = messageObj.data;
+        ws.send( JSON.stringify({
+            type: "games-list",
+            data: getGamesList()
+        }));
+        break;
+      case "set-mode":
+        getClientFromWs(ws).gameMode = messageObj.data;
+        ws.send( JSON.stringify({
+            type: "games-list",
+            data: getGamesList()
+        }));
+        break;
     }
   });
 }
@@ -163,7 +210,7 @@ function pruneClients() {
   }
 }
 
-setInterval(pruneClients, 5000);
+setInterval(pruneClients, 1000);
 
 http.createServer(accept).listen(port);
 

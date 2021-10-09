@@ -61,8 +61,8 @@ interface genericUiMsg{
 export type UiMessage = genericUiMsg// | setGamesMsg | setPlayingMsg | setHostingMsg;
 
 export enum gameType{
-    pvp="PvP",
-    race="Race",
+    pvp="pvp",
+    race="race",
 }
 
 export const App: React.FC = (props) => {
@@ -134,8 +134,14 @@ export const App: React.FC = (props) => {
         networking.setVis(to);
         setSetting("public", to);        
     }
-    const setName = (to: string)=>setSetting("name", to);
-    const setMode = (to: gameType)=>setSetting("mode", to);
+    const setName = (to: string)=>{
+        networking.setName(to);
+        setSetting("name", to);
+    }
+    const setMode = (to: gameType)=>{
+        networking.setMode(to);
+        setSetting("mode", to);
+    }
     const creatorProps = {
         setPublic: setPublic,
         setName: setName,
@@ -143,7 +149,7 @@ export const App: React.FC = (props) => {
         id: networking.id,
     }
 
-    const refreshGameList = ()=>{networking.getGames((l:gameInfo[])=>setGamesList(l))}
+    const refreshGameList = ()=>networking.getGames( (l:Array<gameInfo>) => { setGamesList(l) } )
     
     const joinGame = (id: number)=>{
         console.log("join callback")
@@ -155,7 +161,7 @@ export const App: React.FC = (props) => {
     return (
         <div id="uiOuter">
             <Loader visable={showLoader}>Connecting to server...</Loader>
-            <GamesList show={showGamesList} games={gamesList} joinGame={joinGame} refresh={refreshGameList} />
+            <GamesList myId={networking.id}show={showGamesList} games={gamesList} joinGame={joinGame} refresh={refreshGameList} />
             <GameCreator show={showGamesList} settings={gameSettings} {...creatorProps}/>
             <CanvasComp show={isPlaying} host={isHosting} messageCallback={reciveMessage}/>
         </div>

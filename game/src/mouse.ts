@@ -19,8 +19,8 @@ class Mouse{
 			this.pos.x = evt.clientX - rect.left;
 			this.pos.y = evt.clientY - rect.top;
 
-            this.posF.x = this.pos.x/document.body.clientWidth;
-            this.posF.y = this.pos.y/document.body.clientHeight;
+            this.posF.x = this.pos.x/rect.width;
+            this.posF.y = this.pos.y/rect.height;
 		}
         this.onMouseMove = this.onMouseMove.bind(this)
 		document.addEventListener('mousemove', this.onMouseMove, false);

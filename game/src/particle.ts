@@ -1,4 +1,4 @@
-import { Colour, myRandom, Rect, round, Vector2 } from "./utils";
+import { Colour, randRange, Rect, round, Vector2 } from "./utils";
 
 // meant to be controlled by particle group
 class Particle{
@@ -48,7 +48,7 @@ class ParticleGroup{
         this.lifetime = lifetime;
         this.particles = [];
         for(let i = 0; i < amount; i++){
-            this.particles.push( new Particle(pos, myRandom(0, Math.PI*2), myRandom(minSpeed, maxSpeed), size))
+            this.particles.push( new Particle(pos, randRange(0, Math.PI*2), randRange(minSpeed, maxSpeed), size))
         }
     }
     update(dt: number){

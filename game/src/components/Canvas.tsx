@@ -105,7 +105,7 @@ export class CanvasComp extends React.Component<CanvasCompProps, CanvasCompState
                     this.startHost()
                 }
 
-                this.gameHost.phyTick(delta);
+                // this.gameHost.phyTick(delta);
 
                 this.game.update(delta);
                 this.game.render(this.ctx);
@@ -136,7 +136,9 @@ export class CanvasComp extends React.Component<CanvasCompProps, CanvasCompState
     }
 
     componentWillUnmount(){
-
+        this.gameHost = undefined;
+        this.game = undefined;
+        window.clearInterval(this.inputInterval)
     }
 
 }

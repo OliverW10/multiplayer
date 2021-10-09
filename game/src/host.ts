@@ -2,7 +2,7 @@ import { UiMessage } from ".";
 import { Game } from "./game";
 import { networking, peerInterface, playerInputMessage, playerStateMessage, pong } from "./networking";
 import { Player } from "./player";
-import { Line, myRandom, round, Vector2 } from "./utils";
+import { Line, randRange, round, Vector2 } from "./utils";
 import { generateMap, World } from "./world";
 
 enum gameState{
@@ -21,7 +21,7 @@ export class GameHost {
 
     tickNum = 0;
     tickTimes: Array<{num: number, time: number}> = [];
-    mapSeed = round(myRandom(9999, 999999));
+    mapSeed = round(randRange(9999, 999999));
     map: World = generateMap(this.mapSeed)
     players: Array<Player> = [];
     createExplosion: (pos: Vector2, fromId: number)=>void;
@@ -57,9 +57,9 @@ export class GameHost {
             console.log("called host create explosion")
             for(let p of this.players){
                 if(p.id === fromId){
-                    p.impulseFrom(pos, 0.04, 0.2, 50);
+                    p.exploFrom(pos, true);
                 }else{
-                    p.impulseFrom(pos, 0.04, 0.1, 100);
+                    p.exploFrom(pos, false);
                 }
             }
         } ).bind(this);
@@ -124,9 +124,9 @@ export class GameHost {
             this.lastPhysTick = now;
 
         }else{
-            for (let player of this.players) {
-                player.update(dt, this.map, true)
-            }
+            // for (let player of this.players) {
+            //     player.update(dt, this.map, true)
+            // }
         }
         
     }
@@ -185,7 +185,7 @@ export class GameHost {
 
     reset(){
         this.tickNum = 0;
-        this.mapSeed = myRandom(9999, 999999);
+        this.mapSeed = randRange(9999, 999999);
         for(let p of this.players){
             p.reset();
             networking.rtcSendObj({ type: "world-data", data: this.mapSeed }, p.id); // give the new client the map

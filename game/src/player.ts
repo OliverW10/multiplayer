@@ -34,13 +34,13 @@ export class Player {
     inputX = 0; // input x is rotational input
     inputY = 0; // input y is speed input
 
-    TURN = 0.8; // multipliers for speed
+    TURN = 0.9;
     ACCEL = 0.015;
     SWING_ACCEL = 0.01;
     SWING_TURN = 0.0;
     MAX_SPEED = 5;
     DRAG = 0.12;
-    WALL_BOUNCE = 0.6;
+    WALL_BOUNCE = 0.7;
     SWING_COOLDOWN = 0.2;
 
     swingPos = new Vector2(0, 0);
@@ -57,17 +57,24 @@ export class Player {
     bulletAge: number = 0;
     bulletAlive: boolean = false; // most recent state of bullet
     netBulletAlive: boolean = false; // state of bullet on host, 
-    BULLET_SPEED = 0.1; // map widths per second
-    BULLET_LIFETIME = 100; // seconds
     lastBulletPos: Vector2 = new Vector2(0, 0)
     onCreateExplosion: (pos: Vector2, fromId:number) => void = (_)=>{};
+    BULLET_SPEED = 0.16; // map widths per second
+    BULLET_LIFETIME = 100; // seconds
+    static EXPLO_SIZE = 0.08;
+    EXPLO_SIZE = Player.EXPLO_SIZE; // explosion size
+    EXPLO_F_DMG = 50; // friendly damage
+    EXPLO_DMG = 120;
+    EXPLO_F_SPD = 0.2;
+    EXPLO_SPD = 0.08;
+
 
     lookAngle = 0;
     health = 100;
     healthSmooth = 100;
     damageTime = 0; // time since taken damage in seconds
-    REGEN_COOLDOWN = 6;
-    REGEN_RATE = 15;
+    REGEN_COOLDOWN = 15;
+    REGEN_RATE = 10;
 
     ping = 0; // used by host only
 
@@ -411,6 +418,14 @@ export class Player {
             if(this.health < 0){
                 this.reset();
             }
+        }
+    }
+
+    exploFrom(pos: Vector2, friendly: boolean){
+        if(friendly){
+            this.impulseFrom(pos, this.EXPLO_SIZE, this.EXPLO_F_SPD, this.EXPLO_F_DMG)
+        }else{
+            this.impulseFrom(pos, this.EXPLO_SIZE, this.EXPLO_SPD, this.EXPLO_DMG)
         }
     }
 

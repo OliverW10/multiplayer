@@ -47,6 +47,8 @@ export class Game {
         this.onPeerMsg = this.onPeerMsg.bind(this);
         this.sendInput = this.sendInput.bind(this);
 
+        this.uiCallback({type:UiMessageTypes.hideGamesList})
+
         console.log("created game")
     }
 
@@ -54,12 +56,12 @@ export class Game {
         console.log("called create explosion")
         for(let p of this.players){
             if(p.id === fromId){
-                p.impulseFrom(pos, 0.04, 0.2, 50);
+                p.exploFrom(pos, true);
             }else{
-                p.impulseFrom(pos, 0.04, 0.1, 100);
+                p.exploFrom(pos, false);
             }
         }
-        this.explosions.push(new Explosion(pos, 0.04))
+        this.explosions.push(new Explosion(pos, Player.EXPLO_SIZE))
     }
 
 
@@ -134,7 +136,7 @@ export class Game {
         
         if(this.us){
             // speed
-            showText(ctx, Math.round(this.us.speed * 1000) / 1000 + "/s", ctx.canvas.width/2, ctx.canvas.height-50, 30);
+            showText(ctx, Math.round(this.us.speed * 1000) / 10 + "/s", ctx.canvas.width/2, ctx.canvas.height-50, 30);
             // timer
             const timerVal = GameHost.GAME_LENGTH_S-this.age
             if(timerVal > 8){
@@ -187,12 +189,12 @@ export class Game {
             for(let p of this.players){
                 // render them on minimap
                 const dist = Math.sqrt( (p.pos.x-this.us.pos.x)**2 + (p.pos.y-this.us.pos.y)**2 )
-                if(dist < this.viewPos.h*1.5){
-                    var alpha = 1;
-                }else{
-                    console.log(dist)
-                    var alpha = scaleNumber(dist, this.viewPos.h*1.5, 2, 1, 0, true)
-                }
+                // if(dist < this.viewPos.h*1.5){
+                //     var alpha = 1;
+                // }else{
+                //     var alpha = scaleNumber(dist, this.viewPos.h*1.5, 2, 1, 0, true)
+                // }
+                const alpha = 1;
                 ctx.beginPath();
                 ctx.fillStyle = `rgba(100, 50, 50, ${alpha})`
                 ctx.rect(
@@ -444,15 +446,6 @@ export class Game {
             this.lastTickTime = 0; // time since last getInput (dt added in update)
         }
         return obj
-    }
-    refreshGamesList() {
-        let updateGamesList = (list)=>{
-            const gamesObjs = list.map(x=>{});
-            this.uiCallback({type: UiMessageTypes.setGames, data:gamesObjs}, list);
-        }
-        updateGamesList = updateGamesList.bind(this);
-
-        networking.getGames(updateGamesList);
     }
 
     isHosting() {
