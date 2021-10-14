@@ -1,11 +1,11 @@
 import React from "react"
-import { gameType } from ".."
+import { gameTypes } from ".."
 import "./GameCreator.css"
 
 
 export interface gameSettings{
     public: boolean;
-    mode: gameType;
+    mode: gameTypes;
     name: string;
     slots: number;
 }
@@ -16,7 +16,7 @@ interface CreatorProps{
     settings: gameSettings;
     setPublic: (to: boolean)=>void;
     setName: (to: string)=>void;
-    setMode: (to: gameType)=>void;
+    setMode: (to: gameTypes)=>void;
 }
 
 export const GameCreator: React.FC<CreatorProps> = (props)=>{

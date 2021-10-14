@@ -60,7 +60,7 @@ interface genericUiMsg{
 
 export type UiMessage = genericUiMsg// | setGamesMsg | setPlayingMsg | setHostingMsg;
 
-export enum gameType{
+export enum gameTypes{
     pvp="pvp",
     race="race",
 }
@@ -75,7 +75,7 @@ export const App: React.FC = (props) => {
         {
             public: false,
             name: "Default game",
-            mode: gameType.pvp,
+            mode: gameTypes.pvp,
             slots: 99,
         } as gameSettings
     )
@@ -138,7 +138,7 @@ export const App: React.FC = (props) => {
         networking.setName(to);
         setSetting("name", to);
     }
-    const setMode = (to: gameType)=>{
+    const setMode = (to: gameTypes)=>{
         networking.setMode(to);
         setSetting("mode", to);
     }

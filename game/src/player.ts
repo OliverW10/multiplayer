@@ -34,8 +34,10 @@ export class Player {
     inputX = 0; // input x is rotational input
     inputY = 0; // input y is speed input
 
-    TURN = 0.9;
+    TURN = 1;
     ACCEL = 0.015;
+    BRAKE = 0.0075;
+    BRAKE_TURN_BONUS = 1; // 100% extra
     SWING_ACCEL = 0.01;
     SWING_TURN = 0.0;
     MAX_SPEED = 5;
@@ -215,14 +217,18 @@ export class Player {
             
             let turnBonus = 1;
             if(this.inputY < 0){
-                if(this.speed < 0){
-                    this.inputY/=2;
-                }else{
-                    turnBonus = 1+(-this.inputY)*0.5; // 50% bonus turn speed when slowing down
+                this.speed += this.inputY * dts * this.BRAKE;
+                
+                if(this.speed > 0){
+                    turnBonus = 1+(-this.inputY)*this.BRAKE_TURN_BONUS; // 50% bonus turn speed when slowing down
                 }
+                this.angle += this.inputX * dts * this.TURN * turnBonus;
+
+            }else{
+                this.speed += this.inputY * dts * this.ACCEL;
+                this.angle += this.inputX * dts * this.TURN;
             }
-            this.speed += this.inputY * dts * this.ACCEL;
-            this.angle += this.inputX * dts * this.TURN * turnBonus;
+            
 
             this.speed *= 1-(this.DRAG*dts)
 

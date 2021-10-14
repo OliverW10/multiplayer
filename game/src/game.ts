@@ -6,7 +6,7 @@ import { showText, Vector2, Rect, round, getLineRect, scaleNumber } from "./util
 import { GameHost } from "./host";
 import { Explosion } from "./particle";
 import { generateMap } from "./world";
-import { UiMessage, UiMessageTypes } from ".";
+import { gameTypes, UiMessage, UiMessageTypes } from ".";
 
 
 // Handles rendering, player input, movement prediction
@@ -38,6 +38,8 @@ export class Game {
     detonating = false;
 
     uiCallback: (msgType: UiMessage, data?: any)=>void;
+
+    gameType: gameTypes = gameTypes.pvp;
 
     constructor(uiCallback: (mesType: UiMessage)=>void) {
         this.players = [];

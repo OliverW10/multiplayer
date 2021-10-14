@@ -1,7 +1,7 @@
 // https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking
 // https://raymondgh.github.io/webrtc.html
 
-import { gameType, UiMessage, UiMessageTypes } from ".";
+import { gameTypes, UiMessage, UiMessageTypes } from ".";
 import { Peer } from "./networkPeer";
 import { playerData } from "./player";
 import { Vector2 } from "./utils";
@@ -49,7 +49,7 @@ export interface gameInfo{
     name: string;
     players: number;
     slots?: number;
-    mode: gameType;
+    mode: gameTypes;
 }
 
 
@@ -86,7 +86,7 @@ type setPlayersMsg = {
 }
 type setModeMsg = {
     type: "set-mode",
-    data: gameType
+    data: gameTypes
 }
 type passthroughMsg = {
     type: "passthrough",
@@ -175,7 +175,7 @@ class Networking {
             if (msgObj.type == "games-list") 
             {
                 const createGameObj = (data: any): gameInfo=>{
-                    return {id: data.id, name: data.name, players:data.players, mode:data.mode==="pvp"?gameType.pvp:gameType.race}
+                    return {id: data.id, name: data.name, players:data.players, mode:data.mode==="pvp"?gameTypes.pvp:gameTypes.race}
                 }
                 this.gamesList = msgObj.data.map(createGameObj);
                 this.onGameList(this.gamesList);
@@ -415,7 +415,7 @@ class Networking {
         this.setVis(!this.visable)
         return this.visable;
     }
-    public setMode(mode: gameType){
+    public setMode(mode: gameTypes){
         this.wsSend({type:"set-mode", data:mode})
     }
     public setName(name: string){

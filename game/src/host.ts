@@ -1,4 +1,4 @@
-import { UiMessage } from ".";
+import { gameTypes, UiMessage } from ".";
 import { Game } from "./game";
 import { networking, peerInterface, playerInputMessage, playerStateMessage, pong } from "./networking";
 import { Player } from "./player";
@@ -38,7 +38,9 @@ export class GameHost {
     lastPhysTick = performance.now()
     running = true;
 
-    constructor(uiCallback: (mesType: UiMessage)=>void) {
+    curGameType: gameTypes = gameTypes.pvp;
+
+    constructor(uiCallback: (mesType: UiMessage)=>void, gameType: gameTypes) {
         this.uiCallback = uiCallback;
         // override networkings callbacks
         networking.rtcSendObj({ type: "world-data", data: this.mapSeed }, -1); // give the new client the map
@@ -46,6 +48,8 @@ export class GameHost {
             console.log("sending new client the map")
             networking.rtcSendObj({ type: "world-data", data: this.mapSeed }, id); // give the new client the map
         })
+
+        this.curGameType = gameType;
 
         this.netInterval = window.setInterval(() => { this.netTick() }, 1000 / this.netTickrate) // set tick interval to send to clients
         this.physInterval = window.setInterval(()=> { this.phyTick() }, 1000 / this.physickrate)
@@ -55,12 +59,17 @@ export class GameHost {
 
         this.createExplosion = ( (pos: Vector2, fromId: number)=>{
             console.log("called host create explosion")
-            for(let p of this.players){
-                if(p.id === fromId){
-                    p.exploFrom(pos, true);
-                }else{
-                    p.exploFrom(pos, false);
+            if(this.curGameType == gameTypes.pvp){
+                for(let p of this.players){
+                    if(p.id === fromId){
+                        p.exploFrom(pos, true);
+                    }else{
+                        p.exploFrom(pos, false);
+                    }
                 }
+            }
+            if(this.curGameType == gameTypes.race){
+                
             }
         } ).bind(this);
 
